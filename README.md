@@ -17,12 +17,20 @@
 
 要求：Windows（播放走 winmm MCI）；Coopanion 已运行。
 
-从 Release 下载 `cortico-world-tts-x.y.z.tgz`，然后在 Coopanion 的扩展目录安装：
+**一键安装**（在 Coopanion 的扩展目录里直接装 Release 包）：
 
 ```powershell
 cd <Coopanion 目录>\build\data\extensions
-pnpm add <tgz 文件路径或下载直链>
+pnpm add https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz
 ```
+
+国内网络下载慢时，在 URL 前加透传代理：
+
+```powershell
+pnpm add https://gh-proxy.com/https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz
+```
+
+也可以从 [Releases](https://github.com/blacksunshy/coopanion-tts/releases) 页面下载 `cortico-world-tts-x.y.z.tgz` 后本地安装（`pnpm add <tgz 文件路径>`）。
 
 重启 Coopanion，扩展即被加载（控制台「扩展」页可见状态为已加载）。
 
