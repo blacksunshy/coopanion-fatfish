@@ -1,9 +1,8 @@
 {
-  "name": "cortico-world-tts",
+  "name": "cortico-world-tts-edge",
   "version": "0.1.1",
-  "private": true,
   "type": "module",
-  "description": "Cortico World: speaks the pet's replies aloud with a voice the person picks",
+  "description": "桌宠语音朗读：让 Coopanion 的 Coo 把回复读出声来，16 个中文/外语音色可选，基于 Edge TTS 免费合成 / A cortico World extension that speaks the pet's replies aloud with a chosen voice (Edge TTS)",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {
