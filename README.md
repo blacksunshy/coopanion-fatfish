@@ -52,6 +52,14 @@ pnpm add https://gh-proxy.com/https://github.com/blacksunshy/coopanion-tts/relea
 | 音量 | 相对音量，正数更大 |
 | 朗读选项 | Coo 提问时把可选项也读出来 |
 
+## 常见问题
+
+**控制台安装框报「不是合法的 npm 包名」？**
+那是把 GitHub 链接粘进控制台「安装扩展」输入框了。该输入框只认 npm 包名或本地目录路径，本扩展走 Release 直链，请用上方命令行安装。若想用控制台装：在仓库页 Code → Download ZIP，解压后在安装框里填**解压目录**（含 package.json 那层）的路径。
+
+**「扩展」页看不到本扩展 / 加载失败？**
+确认装到了 `build\data\extensions`（命令行 `pnpm ls` 可查），且重启过 Coopanion；`--ignore-workspace` 漏掉也会导致装错位置。
+
 ## 工作原理
 
 Coo 的气泡台词是 `desktop-pet.self` 事件；本扩展以与 DSH 桥接相同的方式扫描事件流，取出 `say` / `ask` 内容，清除 emoji 与 markdown 后交给 Edge TTS 合成 mp3，再用 winmm MCI 在 PowerShell 子进程里播放。新台词到来会打断上一句（与真实对话节奏一致）。非 Windows 平台扩展静默运行，不影响桌宠。
