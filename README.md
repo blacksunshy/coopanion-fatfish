@@ -6,7 +6,7 @@
 
 ## 功能
 
-- **16 个预设音色**，中文下拉直接选：晓晓、晓伊、云希、云扬、云健、云夏、晓北（东北话）、晓臻（陕西话）、云杰（河南话）、晓多（台湾话）、曉曼/曉恩（粤语）、云枫（英语）、奈奈美（日语）、善英（韩语）等
+- **16 个预设音色**，中文下拉直接选：晓晓（温暖女声）、晓伊（活泼女声）、晓墨（沉稳女声）、云希（阳光男声）、云扬（播音男声）、云健（浑厚男声）、云夏（少年音）、晓北（东北口音）、曉曼/萬龍（粤语）、曉臻（台湾腔）、Aria/Jenny/Guy（英语）、七海（日语）、선히（韩语）
 - 列表外的音色直接对 Coo 说，它会帮你填任意 Edge TTS 音色名（如 `zh-CN-XiaoyouNeural`）
 - **语速 / 音量** 可调（-30% ~ +30%）
 - **朗读开关**、提问选项是否一并朗读
@@ -15,22 +15,28 @@
 
 ## 安装
 
-要求：Windows（播放走 winmm MCI）；Coopanion 已运行。
+要求：Windows（播放走 winmm MCI）；Coopanion 已运行；pnpm（安装 Coopanion 时已具备）。
 
 **一键安装**（在 Coopanion 的扩展目录里直接装 Release 包）：
 
 ```powershell
 cd <Coopanion 目录>\build\data\extensions
-pnpm add https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz
+pnpm add https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz --ignore-workspace
 ```
+
+> `--ignore-workspace` 必须带上：扩展目录位于 Coopanion 的 pnpm 工作区内，缺了它 pnpm 会把包装到主项目里，扩展加载不到。
+
+安装末尾出现的 `[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: msedge-tts` 提示**属正常**，不影响使用（msedge-tts 是纯 JS 库，无需构建脚本）。
+
+已装过旧版时，重跑同一条安装命令即可覆盖升级；改完配置立即生效，升级后重启一次 Coopanion。
 
 国内网络下载慢时，在 URL 前加透传代理：
 
 ```powershell
-pnpm add https://gh-proxy.com/https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz
+pnpm add https://gh-proxy.com/https://github.com/blacksunshy/coopanion-tts/releases/download/v0.1.1/cortico-world-tts-0.1.1.tgz --ignore-workspace
 ```
 
-也可以从 [Releases](https://github.com/blacksunshy/coopanion-tts/releases) 页面下载 `cortico-world-tts-x.y.z.tgz` 后本地安装（`pnpm add <tgz 文件路径>`）。
+也可以从 [Releases](https://github.com/blacksunshy/coopanion-tts/releases) 页面下载 `cortico-world-tts-x.y.z.tgz` 后本地安装（`pnpm add <tgz 文件路径> --ignore-workspace`）。
 
 重启 Coopanion，扩展即被加载（控制台「扩展」页可见状态为已加载）。
 
