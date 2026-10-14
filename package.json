@@ -1,0 +1,48 @@
+{
+  "name": "cortico-world-tts",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Cortico World: speaks the pet's replies aloud with a voice the person picks",
+  "author": "blacksunshy",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/blacksunshy/coopanion-tts.git"
+  },
+  "keywords": [
+    "cortico-world",
+    "cortico",
+    "tts",
+    "voice",
+    "edge-tts",
+    "desktop-pet"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "cortico": {
+    "kind": "world",
+    "api": 5
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "msedge-tts": "2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
