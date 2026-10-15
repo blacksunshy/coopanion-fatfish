@@ -1,27 +1,48 @@
 /**
- * The TTS World: speaks what the pet says.
+ * The Fatfish World: one pack that both speaks for the pet and bridges it to DeepSeek Harness.
  *
- * The pet's lines are `desktop-pet.self` events, stored and never delivered to the bot; this World
- * scans the store the way the DSH bridge does, picks up `say` and `ask` records, and reads them
- * aloud with the voice the person picked. It has no words of its own: the speech is the bubble's
- * echo, and the only tool it offers is one that stops it.
+ * One scan per tick serves both halves from the same event store: the pet's own lines go to the
+ * speaker, the person's lines go to the DSH bridge. Each half keeps its own cursor — the voice half
+ * never replays what was said before this World started, while the bridge half looks back a window
+ * so lines handed over before a restart are not handed over twice.
+ *
+ * The bridge half owns one WebSocket to the Host half (`packages/coopanion-connector-dsh`). DSH
+ * notices arrive as events for the bot to judge, and the only word this World ever says on its own
+ * is the receipt that a line was already handed over. The voice half has no words of its own: the
+ * speech is the bubble's echo, and its only tool stops it.
  */
-import type { EventEnvelope, ToolDef, World, WorldConsoleDecl, WorldHost } from 'cortico/core/types.ts';
+import type { Language } from 'cortico/core/language.ts';
+import type {
+  EventEnvelope,
+  ToolDef,
+  World,
+  WorldConsoleDecl,
+  WorldHost,
+  WorldPanelDecl,
+} from 'cortico/core/types.ts';
+import { DshClient, PROTOCOL_VERSION, type HostFrame } from './client.ts';
 import { speakable } from './clean.ts';
-import { ttsConfigGroups, type TtsConfigSection } from './config.ts';
-import { ttsText, type TtsText } from './i18n/index.ts';
+import { DEFAULT_URL, FATFISH_ID, RELAY_MAX, SEND_MAX, fatfishConfigGroups, type FatfishConfigSection } from './config.ts';
+import { fatfishText, type FatfishText } from './i18n/index.ts';
+import { DEFAULT_VOICE } from './voices.ts';
 import { Speaker, type SpeakOptions } from './speaker.ts';
 
-/** The pet's own lines; the pet World owns the type, this World only reads it. */
+/** The event type a person's line carries; the pet World owns the type, this World only reads it. */
+const PERSON_EVENT = 'desktop-pet.message';
+/** The pet's own lines; the pet World owns the type, this World only reads them. */
 const SELF_TYPE = 'desktop-pet.self';
+/** How far back the bridge's first scan looks, and how far back it reads hand-over notices. */
+const RELAY_WINDOW = 50;
 /** The scan cadence; it reads the in-process event store, not the disk. */
 const SCAN_MS = 1500;
 
-export interface TtsWorldOptions {
-  /** The live `worlds.tts` section. */
-  cfg: TtsConfigSection;
+export interface FatfishWorldOptions {
+  /** The live `worlds.fatfish` section. */
+  cfg: FatfishConfigSection;
   /** The app language, read at each use. */
-  language?(): string;
+  language?(): Language;
+  /** The name this pet gives DSH. */
+  name?(): string;
 }
 
 /** The text one self event reads as; empty for events that say nothing speakable. */
@@ -44,10 +65,19 @@ export function lineOf(event: EventEnvelope, readOptions: boolean): string {
   return '';
 }
 
-export class TtsWorld implements World {
-  readonly id = 'tts';
+export class FatfishWorld implements World {
+  readonly id = FATFISH_ID;
   private host: WorldHost | null = null;
-  private lastSeenCursor = 0;
+  private client: DshClient | null = null;
+  private connected = false;
+  private session = '';
+  private model = '';
+  /** Where the voice half has read to; it starts at the newest event, so a restart replays nothing. */
+  private voiceCursor = 0;
+  /** Where the bridge half has read to; it starts a window back, to relearn its hand-overs. */
+  private bridgeCursor = 0;
+  /** The person's lines already handed to DSH, by the cursor of the line's own event. */
+  private readonly handedOver = new Set<number>();
   private scanTimer: NodeJS.Timeout | null = null;
   private readonly speaker = new Speaker();
   /** Serialises speech: one clip at a time, the next starting as this one ends. */
@@ -55,17 +85,22 @@ export class TtsWorld implements World {
   private speaking = false;
   private failed = false;
 
-  constructor(private readonly opts: TtsWorldOptions) {}
+  constructor(private readonly opts: FatfishWorldOptions) {}
 
-  private get t(): TtsText {
-    return ttsText((this.opts.language?.() as 'zh' | 'en') ?? 'zh');
+  private get t(): FatfishText {
+    return fatfishText(this.opts.language?.() ?? 'zh');
+  }
+
+  private get url(): string {
+    const url = this.opts.cfg.url;
+    return typeof url === 'string' && url.trim() ? url.trim() : DEFAULT_URL;
   }
 
   private get voice(): SpeakOptions {
     const cfg = this.opts.cfg;
     const str = (v: unknown, fallback: string): string => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
     return {
-      voice: str(cfg.voice, 'zh-CN-XiaoxiaoNeural'),
+      voice: str(cfg.voice, DEFAULT_VOICE),
       rate: str(cfg.rate, '+0%'),
       volume: str(cfg.volume, '+0%'),
     };
@@ -73,9 +108,30 @@ export class TtsWorld implements World {
 
   async start(host: WorldHost): Promise<void> {
     this.host = host;
-    // only what happens while this World is up is spoken; a restart does not replay the old lines
-    this.lastSeenCursor = host.store.latestCursor();
-    host.log.info(`tts armed, voice=${this.voice.voice}, fromCursor=${this.lastSeenCursor}`);
+    const latest = host.store.latestCursor();
+    this.voiceCursor = latest;
+    this.bridgeCursor = Math.max(0, latest - RELAY_WINDOW);
+    this.collectHandedOver();
+    host.log.info(`fatfish armed, voice=${this.voice.voice}, voiceCursor=${this.voiceCursor}, bridgeCursor=${this.bridgeCursor}`);
+    if (this.opts.cfg.bridgeEnabled !== false) {
+      const client = new DshClient({
+        url: () => this.url,
+        name: () => this.opts.name?.() ?? 'Coopanion',
+        onFrame: (frame) => void this.onFrame(frame),
+        onState: (connected, session) => {
+          this.connected = connected;
+          this.session = session?.session ?? '';
+          this.model = session?.model ?? '';
+          if (connected) host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
+        },
+        log: (level, text) => {
+          if (level === 'warn') host.log.warn(text);
+          else host.log.info(text);
+        },
+      });
+      this.client = client;
+      client.start();
+    }
     this.scanTimer = setInterval(() => void this.scan(), SCAN_MS);
     this.scanTimer.unref?.();
   }
@@ -85,28 +141,139 @@ export class TtsWorld implements World {
       clearInterval(this.scanTimer);
       this.scanTimer = null;
     }
+    this.client?.stop();
+    this.client = null;
+    this.connected = false;
     await this.speaker.stop();
     this.host = null;
   }
 
-  /** One scan of the pet's self events; a line is picked up once, at its own cursor. */
+  /**
+   * One scan serves both halves. The first pass re-reads the bridge's window, so a line from before
+   * a restart is still relayed once; the voice half only picks up events newer than its own cursor,
+   * which is what keeps it from replaying the bubble lines of the previous run.
+   */
   private async scan(): Promise<void> {
     const host = this.host;
-    if (!host || this.opts.cfg.enabled === false) return;
+    if (!host) return;
     let events: EventEnvelope[];
     try {
-      events = host.store.range({ fromCursor: this.lastSeenCursor + 1, limit: 50 });
+      events = host.store.range({ fromCursor: Math.min(this.voiceCursor, this.bridgeCursor) + 1, limit: RELAY_WINDOW });
     } catch {
       return;
     }
     for (const event of events) {
-      this.lastSeenCursor = Math.max(this.lastSeenCursor, event.cursor);
-      if (event.type !== SELF_TYPE) continue;
-      const line = lineOf(event, this.opts.cfg.readOptions !== false);
-      if (line) {
-        host.log.info(`tts speaking: ${line.slice(0, 60)}`);
-        this.enqueue(line);
+      const fresh = event.cursor > this.voiceCursor;
+      this.voiceCursor = Math.max(this.voiceCursor, event.cursor);
+      this.bridgeCursor = Math.max(this.bridgeCursor, event.cursor);
+      if (event.type === PERSON_EVENT) {
+        this.relay(event);
+        continue;
       }
+      if (event.type === SELF_TYPE && fresh) {
+        const line = lineOf(event, this.opts.cfg.readOptions !== false);
+        if (line) {
+          host.log.info(`fatfish speaking: ${line.slice(0, 60)}`);
+          this.enqueue(line);
+        }
+      }
+    }
+  }
+
+  /** One of the person's lines towards DSH, behind the guards that keep the two mouths from looping. */
+  private relay(event: EventEnvelope): void {
+    if (this.opts.cfg.relayPerson === false || !this.client) return;
+    if (this.handedOver.has(event.cursor)) return;
+    const meta = (event.meta ?? {}) as { via?: unknown; text?: unknown; relayed?: unknown };
+    // A line this bridge put there came from DSH; sending it back would loop the two mouths.
+    if (meta.relayed === true || meta.via === 'dsh') return;
+    const text = typeof meta.text === 'string' ? meta.text : event.text;
+    if (!text) return;
+    void this.sayToDsh(text, event.cursor);
+  }
+
+  /**
+   * The lines already handed to DSH, read back from the notices those hand-overs left behind.
+   *
+   * The bridge looks back a window of events when it starts and remembers nothing across a restart,
+   * so a line relayed before the restart would be relayed again once the pet came back. Each notice
+   * carries the cursor of the line it carried, which is what makes the hand-over readable here.
+   */
+  private collectHandedOver(): void {
+    const host = this.host;
+    if (!host) return;
+    let events: EventEnvelope[];
+    try {
+      events = host.store.range({ fromCursor: this.bridgeCursor, limit: RELAY_WINDOW });
+    } catch {
+      return;
+    }
+    for (const event of events) {
+      if (event.type !== `${FATFISH_ID}.notice`) continue;
+      const meta = (event.meta ?? {}) as { kind?: unknown; cursor?: unknown };
+      if (meta.kind === 'relayed' && typeof meta.cursor === 'number') this.handedOver.add(meta.cursor);
+    }
+  }
+
+  /**
+   * One notice for the bot to judge. A notice that cannot be stored is one the person never needed,
+   * so the failure is swallowed rather than raised into the socket's message handler.
+   */
+  private pushNotice(text: string, meta: Record<string, unknown>): void {
+    void this.host?.pushEvent(
+      { type: `${FATFISH_ID}.notice`, source: FATFISH_ID, ts: new Date().toISOString(), text, meta },
+      { trigger: 'flush' },
+    ).catch(() => {});
+  }
+
+  /**
+   * One of the person's lines into DSH, followed by a notice saying the bridge already carried it.
+   *
+   * Without that notice the bot sees the person's words arrive with no sign that DSH has them, and
+   * hands the same line over again with `dsh_send`; DSH then wraps the copy in its own prefix, and
+   * the person's one line sits in the conversation twice.
+   */
+  private async sayToDsh(text: string, sourceCursor: number): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    if (await client.say(text) !== null) return;
+    this.handedOver.add(sourceCursor);
+    const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+    this.pushNotice(`[DSH] 已把「${shown}」转交给 DSH，不必再转一次。`, { kind: 'relayed', text, cursor: sourceCursor });
+  }
+
+  /** One notice from DSH, turned into an event for the bot to judge. */
+  private async onFrame(frame: HostFrame): Promise<void> {
+    if (!this.host) return;
+    const push = (text: string, meta: Record<string, unknown>): void => this.pushNotice(text, meta);
+    switch (frame.t) {
+      case 'turn-start':
+        push(`[DSH] 第 ${frame.turn} 轮开始。`, { kind: 'turn-start', turn: frame.turn });
+        return;
+      case 'turn-end':
+        push(`[DSH] 第 ${frame.turn} 轮结束（${frame.reason}）。`, { kind: 'turn-end', turn: frame.turn, reason: frame.reason });
+        return;
+      case 'reply': {
+        const text = frame.text.length > RELAY_MAX ? `${frame.text.slice(0, RELAY_MAX)}…` : frame.text;
+        push(`[DSH] 回复：${text}`, { kind: 'reply', turn: frame.turn });
+        return;
+      }
+      case 'tool':
+        push(`[DSH] 调用工具 ${frame.name}${frame.detail ? `，参数 ${frame.detail}` : ''}。`, { kind: 'tool', name: frame.name });
+        return;
+      case 'approval':
+        push(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
+        return;
+      case 'question':
+        push(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'error':
+        push(`[DSH] 出错：${frame.text}`, { kind: 'error' });
+        return;
+      case 'ready':
+      case 'accepted':
+      case 'refused':
+        return;
     }
   }
 
@@ -119,11 +286,11 @@ export class TtsWorld implements World {
 
   private async say(line: string): Promise<void> {
     const host = this.host;
-    if (!host || this.opts.cfg.enabled === false) return;
+    if (!host || this.opts.cfg.ttsEnabled === false) return;
     this.speaking = true;
     try {
       const spoken = await this.speaker.speak(line, this.voice, (text) => host.log.info(text));
-      host.log.info(spoken ? 'tts played' : 'tts skipped (cooldown/off-platform)');
+      host.log.info(spoken ? 'fatfish played' : 'fatfish skipped (cooldown/off-platform)');
       this.failed = !spoken;
     } finally {
       this.speaking = false;
@@ -131,7 +298,34 @@ export class TtsWorld implements World {
   }
 
   tools(): ToolDef[] {
+    const t = this.t.model;
     return [
+      {
+        name: 'dsh_send',
+        description: [
+          'Hand one line to the DeepSeek Harness conversation this pet is bridged to; DSH treats it as a message from the person.',
+          this.opts.cfg.relayPerson !== false
+            ? 'The person\'s own lines reach DSH through the bridge itself, and the notice that follows one says it arrived; hand over a line only when you have seen no such notice.'
+            : 'The person\'s own lines do not reach DSH on their own: hand over the ones that belong in that conversation, in their own words where you have them.',
+          'DSH writes the pet\'s name in a prefix of its own, so text that already carries one arrives inside a second.',
+          'The receipt says whether DSH accepted it. Do not call it to narrate what you are doing.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', maxLength: SEND_MAX, description: 'What to hand over, in the person\'s own words where you have them.' },
+          },
+          required: ['text'],
+        },
+        handler: async (args) => {
+          const text = typeof args.text === 'string' ? args.text : '';
+          if (!text.trim()) return t.sendFailed.replace('{reason}', 'empty message');
+          if (!this.client) return t.sendFailed.replace('{reason}', t.notConnected);
+          const refusal = await this.client.say(text);
+          return refusal === null ? t.sent : t.sendFailed.replace('{reason}', refusal);
+        },
+      },
       {
         name: 'tts_hush',
         description: [
@@ -151,8 +345,14 @@ export class TtsWorld implements World {
   }
 
   envPromptVars(): Record<string, string> {
-    const on = this.opts.cfg.enabled !== false;
+    const t = this.t.model;
+    const on = this.opts.cfg.ttsEnabled !== false;
     return {
+      'dsh.status': !this.client
+        ? 'off'
+        : this.connected
+          ? t.statusConnected.replace('{session}', this.session).replace('{model}', this.model || '—')
+          : t.statusOffline,
       'tts.status': !on
         ? 'off'
         : this.failed
@@ -163,19 +363,44 @@ export class TtsWorld implements World {
     };
   }
 
-  console(language: string = 'zh'): WorldConsoleDecl {
-    const t = ttsText((language as 'zh' | 'en') ?? 'zh');
+  console(language: Language = 'zh'): WorldConsoleDecl {
+    const t = fatfishText(language);
     return {
       label: t.label,
       lamps: [
         {
+          label: t.lamps.bridge,
+          state: this.connected ? 'online' : 'offline',
+          hint: this.connected ? t.lamps.connected : t.lamps.offline,
+        },
+        {
           label: t.lamps.speech,
-          state: this.opts.cfg.enabled === false ? 'offline' : this.failed ? 'error' : this.speaking ? 'loading' : 'online',
-          hint: this.opts.cfg.enabled === false ? t.lamps.idle : this.failed ? t.lamps.failed : this.speaking ? t.lamps.speaking : t.lamps.idle,
+          state: this.opts.cfg.ttsEnabled === false ? 'offline' : this.failed ? 'error' : this.speaking ? 'loading' : 'online',
+          hint: this.opts.cfg.ttsEnabled === false ? t.lamps.idle : this.failed ? t.lamps.failed : this.speaking ? t.lamps.speaking : t.lamps.idle,
         },
       ],
-      panels: [],
-      config: ttsConfigGroups((language as 'zh' | 'en') ?? 'zh'),
+      panels: panelDecls(),
+      config: fatfishConfigGroups(language),
+      invoke: async (panel, method) => {
+        if (panel !== 'dsh' || method !== 'state') throw new Error(`unknown ${panel}.${method}`);
+        return this.state();
+      },
     };
   }
+
+  /** What the console page shows; the protocol revision is part of it so a mismatch is visible. */
+  state(): Record<string, unknown> {
+    return {
+      connected: this.connected,
+      url: this.url,
+      session: this.session,
+      model: this.model,
+      protocol: PROTOCOL_VERSION,
+    };
+  }
+}
+
+/** One panel, with the state method the console polls. */
+function panelDecls(): WorldPanelDecl[] {
+  return [{ id: 'dsh', title: 'DSH', getMethods: ['state'] }];
 }

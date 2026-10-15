@@ -1,31 +1,52 @@
 /**
- * The `worlds.tts` config section: whether the pet speaks, and with which voice.
+ * The `worlds.fatfish` config section: the whole pack in one place — the DSH bridge on one side,
+ * the Edge TTS voice on the other.
  *
- * The voice is any Edge TTS ShortName; the config offers the short list as choices and accepts a
- * hand-typed one. Rate and volume are relative percentages Edge TTS reads straight into its SSML.
+ * The bridge keys keep the names the old `worlds.dsh` section used (minus `enabled`, which becomes
+ * `bridgeEnabled` so the two on/off switches never collide); a deployment that carried the old
+ * section over needs those four values copied, nothing else. The voice is any Edge TTS ShortName;
+ * the config offers the short list as choices and accepts a hand-typed one.
  */
 import type { Language } from 'cortico/core/language.ts';
 import type { ConfigGroup } from 'cortico/core/config-schema.ts';
-import { ttsText } from './i18n/index.ts';
+import { fatfishText } from './i18n/index.ts';
 import { DEFAULT_VOICE, RATE_OPTIONS, VOICE_OPTIONS, VOLUME_OPTIONS } from './voices.ts';
 
-export const TTS_ID = 'tts';
+export const FATFISH_ID = 'fatfish';
 
-/** The options kind the voice dropdown fetches its rows under. */
-export const TTS_VOICE_OPTIONS = 'tts.voices';
+/** The options kind the voice dropdown fetches its rows under; the app side serves the rows. */
+export const VOICE_OPTIONS_KIND = 'fatfish.voices';
 
 /** The `{value,label}` rows the `/api/config/options/:kind` endpoint serves for the voice dropdown. */
-export function ttsVoiceOptions(): Array<{ value: string; label: string }> {
+export function voiceOptionRows(): Array<{ value: string; label: string }> {
   return VOICE_OPTIONS.map((v) => ({ value: v.id, label: v.label }));
 }
 
-/** Where synthesised clips are staged before the player picks them up. */
-export const CLIP_DIR = 'tts-clips';
+/** Where the bridge looks for the Host half; the Host prints this in its console. */
+export const DEFAULT_URL = 'ws://127.0.0.1:19387/coopanion/pet';
 
-export interface TtsConfigSection {
+/** Longest text the pet sends into one DSH turn. */
+export const SEND_MAX = 4000;
+
+/** How many characters of one DSH reply the pet is told; the rest is in the DSH console. */
+export const RELAY_MAX = 1200;
+
+export interface FatfishConfigSection {
   [key: string]: unknown;
-  /** Reads the pet's replies aloud. */
+  /** The whole pack; the framework reads this one to decide whether the World mounts. */
   enabled: boolean;
+  // ---- the DSH bridge half ----
+  /** Bridges the pet to DeepSeek Harness. */
+  bridgeEnabled: boolean;
+  /** The Host half's WebSocket URL. */
+  url: string;
+  /** Relay the person's own lines to DSH, so the pet's other mouth hears them too. */
+  relayPerson: boolean;
+  /** Relay what the pet says and does to DSH. */
+  relayPet: boolean;
+  // ---- the voice half ----
+  /** Reads the pet's replies aloud. */
+  ttsEnabled: boolean;
   /** The Edge TTS voice ShortName. */
   voice: string;
   /** Relative speaking rate, e.g. `+15%`. */
@@ -36,32 +57,51 @@ export interface TtsConfigSection {
   readOptions: boolean;
 }
 
-export const TTS_DEFAULTS: TtsConfigSection = {
+export const FATFISH_DEFAULTS: FatfishConfigSection = {
   enabled: true,
+  bridgeEnabled: true,
+  url: DEFAULT_URL,
+  relayPerson: true,
+  relayPet: false,
+  ttsEnabled: true,
   voice: DEFAULT_VOICE,
   rate: '+0%',
   volume: '+0%',
   readOptions: true,
 };
 
-/** The console's config group for this World; keys are paths inside `worlds.tts`. */
-export function ttsConfigGroups(language: Language = 'zh'): ConfigGroup[] {
-  const t = ttsText(language).config;
-  const at = (key: string): string => `worlds.${TTS_ID}.${key}`;
+/** The console's config groups for this World; keys are paths inside `worlds.fatfish`. */
+export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
+  const t = fatfishText(language).config;
+  const at = (key: string): string => `worlds.${FATFISH_ID}.${key}`;
   return [
     {
-      id: `world:${TTS_ID}`,
-      owner: `world:${TTS_ID}`,
+      id: `world:${FATFISH_ID}.bridge`,
+      owner: `world:${FATFISH_ID}`,
       schema: {
         type: 'object',
-        title: t.title,
+        title: t.bridgeTitle,
         properties: {
-          [at('enabled')]: { type: 'boolean', title: t.enabled, description: t.enabledHint, 'x-hot': true },
+          [at('bridgeEnabled')]: { type: 'boolean', title: t.bridgeEnabled, description: t.bridgeEnabledHint, 'x-hot': false },
+          [at('url')]: { type: 'string', title: t.url, description: t.urlHint, 'x-hot': false },
+          [at('relayPerson')]: { type: 'boolean', title: t.relayPerson, description: t.relayPersonHint, 'x-hot': false },
+          [at('relayPet')]: { type: 'boolean', title: t.relayPet, description: t.relayPetHint, 'x-hot': false },
+        },
+      },
+    },
+    {
+      id: `world:${FATFISH_ID}.voice`,
+      owner: `world:${FATFISH_ID}`,
+      schema: {
+        type: 'object',
+        title: t.voiceTitle,
+        properties: {
+          [at('ttsEnabled')]: { type: 'boolean', title: t.ttsEnabled, description: t.ttsEnabledHint, 'x-hot': true },
           [at('voice')]: {
             type: 'string',
             title: t.voice,
             description: t.voiceHint,
-            'x-options': TTS_VOICE_OPTIONS,
+            'x-options': VOICE_OPTIONS_KIND,
             'x-hot': true,
           },
           [at('rate')]: { type: 'string', title: t.rate, description: t.rateHint, enum: [...RATE_OPTIONS], 'x-hot': true },

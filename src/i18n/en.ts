@@ -1,17 +1,37 @@
-import type { TtsText } from './index.ts';
+import type { FatfishText } from './index.ts';
 
-export const en: TtsText = {
-  label: 'Voice',
+export const en: FatfishText = {
+  label: 'Fatfish combo pack',
   lamps: {
+    bridge: 'Bridge',
+    connected: 'connected',
+    offline: 'offline',
     speech: 'Voice',
     speaking: 'Speaking',
     idle: 'Idle',
     failed: 'Synthesis failed',
   },
+  panel: {
+    title: 'Bridge state',
+    desc: 'Where the DSH Host plugin listens, and which conversation its notices belong to.',
+    url: 'Address',
+    session: 'Session',
+    model: 'Model',
+    protocol: 'Protocol',
+  },
   config: {
-    title: 'Voice',
-    enabled: 'Speak the pet\'s replies',
-    enabledHint: 'Coo reads its bubble lines aloud; question choices are read too',
+    bridgeTitle: 'DSH bridge',
+    bridgeEnabled: 'Enable the bridge',
+    bridgeEnabledHint: 'Connect to the DSH Host plugin and exchange its messages; the voice half keeps working on its own',
+    url: 'Address',
+    urlHint: "The WebSocket URL of the DSH Host plugin, such as ws://127.0.0.1:19387/coopanion/pet",
+    relayPerson: 'Relay the person',
+    relayPersonHint: 'Tell DSH what the person says to you, types, and has transcribed from voice',
+    relayPet: 'Relay the pet',
+    relayPetHint: 'Tell DSH what you say in bubbles. The two may answer each other; off by default',
+    voiceTitle: 'Voice',
+    ttsEnabled: "Speak the pet's replies",
+    ttsEnabledHint: "Coo reads its bubble lines aloud; question choices are read too",
     voice: 'Voice',
     voiceHint: 'The voice that reads aloud; ask Coo to set any Edge TTS ShortName the list lacks',
     rate: 'Rate',
@@ -24,5 +44,19 @@ export const en: TtsText = {
   hush: {
     stopped: 'Voice stopped.',
     nothing: 'Nothing was playing.',
+  },
+  model: {
+    notConnected: '(DSH is not connected)',
+    envTitle: 'DSH',
+    envBody: [
+      'DeepSeek Harness (DSH) runs coding work in another process, and its bridge plugin sends the progress here: one event when a turn starts and one when it ends, plus the text of DSH replies, the tools it is calling, the approvals it waits for and the questions it waits for the person to answer.',
+      'Those events are notices, not words the person said to you: whether to bubble, and what to say, is your judgement. A person working in DSH is usually watching that window, so bubble only when interrupting is worth it.',
+      'Use `dsh_send` to hand one line to the DSH conversation; DSH treats it as a message from the person. Do not call it when the person asked you to relay nothing.',
+      "Whether what the person says to you, types and has transcribed is also sent to DSH depends on the \"Relay the person\" setting; while it is on, DSH receives a copy, and from DSH's side that event comes from the pet and does not make DSH speak by itself.",
+    ].join('\n\n'),
+    sent: 'Handed to DSH.',
+    sendFailed: 'Not handed to DSH: {reason}',
+    statusConnected: 'Connected (session {session}, model {model})',
+    statusOffline: 'Not connected',
   },
 };

@@ -1,13 +1,13 @@
 {
-  "name": "cortico-world-tts-edge",
-  "version": "0.1.1",
+  "name": "cortico-world-fatfish",
+  "version": "0.2.0",
   "type": "module",
-  "description": "桌宠语音朗读：让 Coopanion 的 Coo 把回复读出声来，16 个中文/外语音色可选，基于 Edge TTS 免费合成 / A cortico World extension that speaks the pet's replies aloud with a chosen voice (Edge TTS)",
+  "description": "大肥鱼功能复合包：桌宠与外界的连接，一体两用 —— DeepSeek Harness 桥接 + Edge TTS 语音朗读 / A Cortico World pack: one half bridges the pet to DeepSeek Harness, the other reads its replies aloud with Edge TTS",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/blacksunshy/coopanion-tts.git"
+    "url": "https://github.com/blacksunshy/coopanion-fatfish.git"
   },
   "keywords": [
     "cortico-world",
@@ -15,6 +15,9 @@
     "tts",
     "voice",
     "edge-tts",
+    "dsh",
+    "deepseek-harness",
+    "bridge",
     "desktop-pet"
   ],
   "engines": {
@@ -26,21 +29,30 @@
   },
   "cortico": {
     "kind": "world",
-    "api": 5
+    "api": 5,
+    "consoleClient": "dist/console.js"
   },
   "files": [
     "src",
+    "scripts",
+    "types",
+    "dist",
     "README.md"
   ],
   "scripts": {
+    "prepare": "node scripts/build-console.mjs",
+    "build": "node scripts/build-console.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "msedge-tts": "2.1.0"
+    "msedge-tts": "2.1.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

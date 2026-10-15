@@ -1,17 +1,37 @@
-import type { TtsText } from './index.ts';
+import type { FatfishText } from './index.ts';
 
-export const zh: TtsText = {
-  label: '语音朗读',
+export const zh: FatfishText = {
+  label: '大肥鱼功能复合包',
   lamps: {
+    bridge: '桥接',
+    connected: '已连接',
+    offline: '未连接',
     speech: '朗读',
     speaking: '正在朗读',
     idle: '待命',
     failed: '合成失败',
   },
+  panel: {
+    title: '桥接状态',
+    desc: 'DSH 侧插件的地址，以及它当前落在哪个会话上。',
+    url: '地址',
+    session: '会话',
+    model: '模型',
+    protocol: '协议版本',
+  },
   config: {
-    title: '语音朗读',
-    enabled: '朗读桌宠的话',
-    enabledHint: 'Coo 在气泡里说话的同时读出声来；提问的选项一并读出',
+    bridgeTitle: 'DSH 桥接',
+    bridgeEnabled: '启用桥接',
+    bridgeEnabledHint: '连上 DSH 侧的插件，收发它的消息；关闭后只保留语音朗读',
+    url: '地址',
+    urlHint: 'DSH 侧插件的 WebSocket 地址，形如 ws://127.0.0.1:19387/coopanion/pet',
+    relayPerson: '转发人物的话',
+    relayPersonHint: '把你在桌宠里说的、打字的与语音转写的话一并告诉 DSH',
+    relayPet: '转发桌宠的话',
+    relayPetHint: '把你在气泡里说的话告诉 DSH。可能造成两边互相接话，默认关闭',
+    voiceTitle: '语音朗读',
+    ttsEnabled: '朗读桌宠的话',
+    ttsEnabledHint: 'Coo 在气泡里说话的同时读出声来；提问的选项一并读出',
     voice: '音色',
     voiceHint: '选一个说话的声音；列表里没有的 Edge TTS 音色名也可以让 Coo 帮你填',
     rate: '语速',
@@ -24,5 +44,19 @@ export const zh: TtsText = {
   hush: {
     stopped: '已停下朗读。',
     nothing: '朗读已停。',
+  },
+  model: {
+    notConnected: '（DSH 未连接）',
+    envTitle: 'DSH',
+    envBody: [
+      'DeepSeek Harness（下称 DSH）在另一台进程里跑编码任务，它的桥接插件把进展送到这里：一轮开始与结束时你会收到一条事件，DSH 的回复正文、正在调用的工具、等你批准的授权与等人物回答的提问也会送来。',
+      '这些事件是通知，不是人物对你说的话：要不要冒泡、说什么，由你判断。人物在 DSH 里干活时通常盯着那边的窗口，只有确实值得打断才冒泡。',
+      '用 `dsh_send` 可以把一句话交给 DSH 当前的会话，DSH 会把它当作人物发的消息处理。人物没有要你转达什么时不要调用它。',
+      '人物自己对你说的、打的与语音转写的话是否也送给 DSH，由「转发人物的话」这个配置决定；开启时 DSH 会收到一份，那条事件在 DSH 看来来自桌宠，不会自动触发 DSH 开口。',
+    ].join('\n\n'),
+    sent: '已交给 DSH。',
+    sendFailed: '没有交给 DSH：{reason}',
+    statusConnected: '已连接（会话 {session}，模型 {model}）',
+    statusOffline: '未连接',
   },
 };

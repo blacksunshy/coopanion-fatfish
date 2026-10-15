@@ -1,15 +1,45 @@
-/** Text of this World, in the app language. */
+/** Text of this World, in the app language: the bridge half, the voice half, and the pack around them. */
 import type { Language } from 'cortico/core/language.ts';
 import { en } from './en.ts';
 import { zh } from './zh.ts';
 
-export interface TtsText {
+export interface FatfishText {
   label: string;
-  lamps: { speech: string; speaking: string; idle: string; failed: string };
-  config: {
+  lamps: {
+    // the bridge lamp
+    bridge: string;
+    connected: string;
+    offline: string;
+    // the voice lamp
+    speech: string;
+    speaking: string;
+    idle: string;
+    failed: string;
+  };
+  /** The console panel: where the bridge listens and which conversation its notices belong to. */
+  panel: {
     title: string;
-    enabled: string;
-    enabledHint: string;
+    desc: string;
+    url: string;
+    session: string;
+    model: string;
+    protocol: string;
+  };
+  config: {
+    // the bridge group
+    bridgeTitle: string;
+    bridgeEnabled: string;
+    bridgeEnabledHint: string;
+    url: string;
+    urlHint: string;
+    relayPerson: string;
+    relayPersonHint: string;
+    relayPet: string;
+    relayPetHint: string;
+    // the voice group
+    voiceTitle: string;
+    ttsEnabled: string;
+    ttsEnabledHint: string;
     voice: string;
     voiceHint: string;
     rate: string;
@@ -21,11 +51,22 @@ export interface TtsText {
   };
   /** The `tts_hush` receipt. */
   hush: { stopped: string; nothing: string };
+  /** What the bot reads; the environment prompt's variables and the tool receipts. */
+  model: {
+    notConnected: string;
+    /** The environment section that tells the bot what DSH is. */
+    envTitle: string;
+    envBody: string;
+    sent: string;
+    sendFailed: string;
+    statusConnected: string;
+    statusOffline: string;
+  };
 }
 
-const TABLE: Record<'zh' | 'en', TtsText> = { zh, en };
+const TABLE: Record<'zh' | 'en', FatfishText> = { zh, en };
 
 /** The table for `language`; every other language reads English. */
-export function ttsText(language: Language = 'zh'): TtsText {
+export function fatfishText(language: Language = 'zh'): FatfishText {
   return language === 'zh' ? TABLE.zh : TABLE.en;
 }
