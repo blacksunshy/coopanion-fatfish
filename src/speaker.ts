@@ -1,32 +1,19 @@
 /**
  * The mouth of the TTS World: one line of text in, one spoken clip out.
  *
- * Synthesis goes through msedge-tts, whose WebSocket is reused across lines; playback hands the
- * clip to a PowerShell child running winmm MCI, whose `play … wait` blocks until the clip ends, so
- * the child's exit is the end of the speech. A new line kills the child still speaking, the way
- * Coo starting a new sentence cuts the previous one short.
+ * Synthesis goes through the vendored Edge TTS client (src/vendor/msedge-tts), whose WebSocket
+ * is reused across lines; playback hands the clip to a PowerShell child running winmm MCI,
+ * whose `play … wait` blocks until the clip ends, so the child's exit is the end of the speech.
+ * A new line kills the child still speaking, the way Coo starting a new sentence cuts the
+ * previous one short.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MsEdgeTTS, OUTPUT_FORMAT } from './vendor/msedge-tts/index.ts';
 
-const require = createRequire(import.meta.url);
-
-/** The pieces of msedge-tts this module needs; the package ships its own types under dist/. */
-interface EdgeTTS {
-  setMetadata(voice: string, format: string): Promise<void>;
-  toFile(dirPath: string, text: string, prosody?: { rate?: string; volume?: string }): Promise<{ audioFilePath: string }>;
-  close(): void;
-}
-interface EdgeTTSModule {
-  MsEdgeTTS: new (options?: { enableLogger?: boolean }) => EdgeTTS;
-  OUTPUT_FORMAT: { AUDIO_24KHZ_48KBITRATE_MONO_MP3: string };
-}
-
-const edge = require('msedge-tts') as EdgeTTSModule;
-const MP3 = edge.OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3;
+const MP3 = OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3;
 
 export interface SpeakOptions {
   voice: string;
@@ -38,7 +25,7 @@ export interface SpeakOptions {
 const COOLDOWN_MS = 10_000;
 
 export class Speaker {
-  private tts: EdgeTTS | null = null;
+  private tts: MsEdgeTTS | null = null;
   private metadataKey = '';
   private player: ChildProcess | null = null;
   private stage: string | null = null;
@@ -83,7 +70,7 @@ export class Speaker {
   private async synthesise(text: string, opts: SpeakOptions, log: (line: string) => void): Promise<string | null> {
     const key = [opts.voice, opts.rate, opts.volume].join('|');
     try {
-      this.tts ??= new edge.MsEdgeTTS({ enableLogger: false });
+      this.tts ??= new MsEdgeTTS({ enableLogger: false });
       if (key !== this.metadataKey) {
         await this.tts.setMetadata(opts.voice, MP3);
         this.metadataKey = key;

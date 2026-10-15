@@ -44,6 +44,8 @@ pnpm run build   # 重建 dist/console.js（esbuild）
 
 `cortico/*` 的框架类型由 `types/cortico.d.ts` 的类型壳提供（仅编译期）；运行时由 Coopanion 的扩展加载器绑定。
 
+Edge TTS 客户端从 [`msedge-tts`](https://github.com/Migushthe2nd/MsEdgeTTS) v2.1.0（MIT）vendor 进 `src/vendor/msedge-tts/`：上游带 `preinstall: npx only-allow pnpm` 脚本，pnpm 11 默认把未批准的依赖构建脚本当安装失败处理，依赖它会拖垮任何人的扩展安装；vendor 后本包仅剩纯 JS 依赖，无构建脚本。
+
 ## License
 
 AGPL-3.0-or-later

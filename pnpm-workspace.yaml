@@ -1,4 +1,4 @@
-# esbuild and msedge-tts need their install scripts; pnpm 10+ blocks them by default.
+# esbuild needs its install script to fetch the platform binary; pnpm 10+ blocks them by default.
 allowBuilds:
   esbuild: true
-  msedge-tts: true
+  msedge-tts: set this to true or false

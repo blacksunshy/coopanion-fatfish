@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "大肥鱼功能复合包：桌宠与外界的连接，一体两用 —— DeepSeek Harness 桥接 + Edge TTS 语音朗读 / A Cortico World pack: one half bridges the pet to DeepSeek Harness, the other reads its replies aloud with Edge TTS",
   "author": "blacksunshy",
@@ -46,8 +46,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "msedge-tts": "2.1.0",
-    "ws": "^8.18.0"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
