@@ -1,9 +1,9 @@
 /**
- * The console panel for the bridge: the Host half's address, the conversation its notices belong
+ * The WebUI panel for the bridge: the Host half's address, the conversation its notices belong
  * to, and the protocol revision both halves speak. Everything comes from this World's own `state`,
  * read through `ctx.invoke`; the panel edits nothing.
  */
-import type { ConsoleClientBundle, ConsolePanel, ConsolePanelContext } from 'cortico/web/shared/client-panel.ts';
+import type { WebUiClientBundle, WebUiPanel, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { fatfishText } from '../i18n/index.ts';
 
 /** One read of `state()` on the Core side. */
@@ -18,8 +18,8 @@ interface BridgeState {
 /** How often the panel re-reads the bridge; the socket changes state without sending a notice. */
 const POLL_MS = 3000;
 
-const bridgePanel: ConsolePanel = {
-  async mount(ctx: ConsolePanelContext): Promise<void> {
+const bridgePanel: WebUiPanel = {
+  async mount(ctx: WebUiPanelContext): Promise<void> {
     const { ui } = ctx;
     const t = fatfishText(ctx.language);
     const sheet = ui.sheet({ title: t.panel.title, desc: t.panel.desc });
@@ -44,7 +44,7 @@ const bridgePanel: ConsolePanel = {
       try {
         show(await ctx.invoke<BridgeState>('state'));
       } catch {
-        // a failing invoke is drawn by the console as this panel's error card
+        // a failing invoke is drawn by the WebUI as this panel's error card
       }
     };
 
@@ -53,4 +53,4 @@ const bridgePanel: ConsolePanel = {
   },
 };
 
-export default { panels: { dsh: bridgePanel } } satisfies ConsoleClientBundle;
+export default { panels: { dsh: bridgePanel } } satisfies WebUiClientBundle;

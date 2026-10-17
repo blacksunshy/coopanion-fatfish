@@ -100,7 +100,7 @@ declare module 'cortico/core/types.ts' {
     getMethods?: readonly string[];
   }
 
-  export interface WorldConsoleDecl {
+  export interface WorldWebUiDecl {
     label?: string;
     lamps?: WorldLamp[];
     badges?: Array<{ label: string; value: string | number; tone?: 'on' | 'off' | 'plain' }>;
@@ -132,14 +132,14 @@ declare module 'cortico/core/types.ts' {
     id: string;
     envPromptVars(): Record<string, string> | null | Promise<Record<string, string> | null>;
     tools(): ToolDef[];
-    console?(language?: import('cortico/core/language.ts').Language): WorldConsoleDecl;
+    webUi?(language?: import('cortico/core/language.ts').Language): WorldWebUiDecl;
     start(host: WorldHost): Promise<void>;
     stop(): Promise<void>;
   }
 }
 
 declare module 'cortico/web/shared/client-panel.ts' {
-  export interface ConsolePanelUI {
+  export interface WebUi {
     sheet(opts: { title: string; desc?: string }): { el: HTMLElement; body: HTMLElement };
     rowbar(): HTMLElement;
     h(tag: string): HTMLElement;
@@ -147,23 +147,45 @@ declare module 'cortico/web/shared/client-panel.ts' {
     kv(rows: Array<{ k: string; v: string }>): HTMLElement;
     [key: string]: unknown;
   }
-  export interface ConsolePanelContext {
+  export interface WebUiPanelContext {
     root: HTMLElement;
     language: string;
-    ui: ConsolePanelUI;
+    ui: WebUi;
     invoke<T>(method: string, args?: unknown[]): Promise<T>;
     interval(fn: () => void, ms: number): void;
   }
-  export interface ConsolePanel {
-    mount(ctx: ConsolePanelContext): Promise<void>;
+  export interface WebUiPanel {
+    mount(ctx: WebUiPanelContext): Promise<void>;
   }
-  export interface ConsoleClientBundle {
-    panels: Record<string, ConsolePanel>;
+  export interface WebUiClientBundle {
+    panels: Record<string, WebUiPanel>;
   }
 }
 
 declare module 'cortico/world.ts' {
   export type WorldSection = Record<string, unknown>;
+  /** One string, or a zh/en pair the WebUI language picks from. */
+  export type DescribeText = string | { zh: string; en: string };
+  /** One tool as the market shows it: the model-facing schema plus a human-facing summary. */
+  export interface ToolDescribe {
+    name: string;
+    description: string;
+    parameters: { type: 'object'; properties: Record<string, unknown>; required?: string[]; [key: string]: unknown };
+    tags: readonly string[];
+    summary?: DescribeText;
+  }
+  /** One event this World pushes, for the market and the docs. */
+  export interface EventDescribe {
+    type: string;
+    description: DescribeText;
+    trigger?: string;
+    tags?: readonly import('cortico/core/types.ts').EventTag[];
+  }
+  /** What `pnpm describe:extension` writes into the pack's describe.json. */
+  export interface WorldDescribe {
+    tools: readonly ToolDescribe[];
+    events: readonly EventDescribe[];
+  }
   export interface WorldContext<S extends WorldSection = WorldSection> {
     readonly id: string;
     readonly cfg: S;
@@ -184,6 +206,8 @@ declare module 'cortico/world.ts' {
     defaults(): S;
     preflight?(ctx: WorldContext<S>): void;
     configOptions?(kind: string, language: import('cortico/core/language.ts').Language): Array<{ value: string; label: string }>;
+    /** The self-description the market reads instead of running the pack's code. */
+    describe?: WorldDescribe;
     create(ctx: WorldContext<S>): import('cortico/core/types.ts').World;
   }
 }

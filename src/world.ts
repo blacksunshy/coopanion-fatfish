@@ -16,9 +16,9 @@ import type {
   EventEnvelope,
   ToolDef,
   World,
-  WorldConsoleDecl,
   WorldHost,
   WorldPanelDecl,
+  WorldWebUiDecl,
 } from 'cortico/core/types.ts';
 import { DshClient, PROTOCOL_VERSION, type HostFrame } from './client.ts';
 import { speakable } from './clean.ts';
@@ -363,7 +363,7 @@ export class FatfishWorld implements World {
     };
   }
 
-  console(language: Language = 'zh'): WorldConsoleDecl {
+  webUi(language: Language = 'zh'): WorldWebUiDecl {
     const t = fatfishText(language);
     return {
       label: t.label,
@@ -388,7 +388,7 @@ export class FatfishWorld implements World {
     };
   }
 
-  /** What the console page shows; the protocol revision is part of it so a mismatch is visible. */
+  /** What the WebUI page shows; the protocol revision is part of it so a mismatch is visible. */
   state(): Record<string, unknown> {
     return {
       connected: this.connected,
@@ -400,7 +400,7 @@ export class FatfishWorld implements World {
   }
 }
 
-/** One panel, with the state method the console polls. */
+/** One panel, with the state method the WebUI polls. */
 function panelDecls(): WorldPanelDecl[] {
   return [{ id: 'dsh', title: 'DSH', getMethods: ['state'] }];
 }

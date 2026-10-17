@@ -16,7 +16,7 @@ export interface FatfishText {
     idle: string;
     failed: string;
   };
-  /** The console panel: where the bridge listens and which conversation its notices belong to. */
+  /** The WebUI panel: where the bridge listens and which conversation its notices belong to. */
   panel: {
     title: string;
     desc: string;

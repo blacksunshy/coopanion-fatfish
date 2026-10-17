@@ -1,8 +1,8 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
-  "description": "大肥鱼功能复合包：桌宠与外界的连接，一体两用 —— DeepSeek Harness 桥接 + Edge TTS 语音朗读 / A Cortico World pack: one half bridges the pet to DeepSeek Harness, the other reads its replies aloud with Edge TTS",
+  "description": "和 DeepSeek Harness（DSH）对话让它帮你干活写代码，宠物回复时用内置语音包读出声。桥接这半边需要先装 DSH 的 Host 插件（coopanion-connector-dsh）才会连；不会装就看源码仓库的说明，或把仓库地址交给 AI 帮你装。/ Chat with DeepSeek Harness (DSH) so it does the work — writing code for you — and hear the pet's replies read aloud with built-in voices. The bridge half needs the DSH Host extension first; if that sounds hard, open the source repo and let an AI walk you through it.",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -29,19 +29,33 @@
   },
   "cortico": {
     "kind": "world",
-    "api": 5,
-    "consoleClient": "dist/console.js"
+    "api": 6,
+    "displayName": "大肥鱼功能复合包",
+    "describe": "describe.json",
+    "webUiClient": "dist/webui.js",
+    "tags": ["requires-extension"],
+    "locales": {
+      "zh": {
+        "displayName": "大肥鱼功能复合包",
+        "description": "和 DeepSeek Harness（DSH）对话，让它帮你干活、写代码；宠物回复你的时候用内置语音包读出声。桥接需要先装 DSH 的 Host 插件才会连——不会装就看源码仓库说明，或把仓库地址交给 AI 帮你装。"
+      },
+      "en": {
+        "displayName": "Fatfish Companions Pack",
+        "description": "Chat with DeepSeek Harness (DSH) so it does the work and writes code for you, and hear the pet's replies read aloud with built-in voices. The bridge needs the DSH Host extension installed first — if that sounds hard, open the source repo and let an AI walk you through it."
+      }
+    }
   },
   "files": [
     "src",
     "scripts",
     "types",
     "dist",
+    "describe.json",
     "README.md"
   ],
   "scripts": {
-    "prepare": "node scripts/build-console.mjs",
-    "build": "node scripts/build-console.mjs",
+    "prepare": "node scripts/build-webui.mjs",
+    "build": "node scripts/build-webui.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

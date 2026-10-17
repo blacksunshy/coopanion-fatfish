@@ -1,4 +1,4 @@
-# 忽略依赖；dist/ 不忽略：dist/console.js 是控制台面板产物，随包分发，
+# 忽略依赖；dist/ 不忽略：dist/webui.js 是 WebUI 面板产物，随包分发，
 # 安装方重新 pnpm install 时 prepare 脚本会按当前源码重建这一份。
 node_modules/
 *.tgz

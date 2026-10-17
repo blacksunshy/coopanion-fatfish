@@ -70,7 +70,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   readOptions: true,
 };
 
-/** The console's config groups for this World; keys are paths inside `worlds.fatfish`. */
+/** The WebUI's config groups for this World; keys are paths inside `worlds.fatfish`. */
 export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
   const t = fatfishText(language).config;
   const at = (key: string): string => `worlds.${FATFISH_ID}.${key}`;
