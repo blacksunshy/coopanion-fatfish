@@ -51,12 +51,9 @@ export interface FatfishText {
   };
   /** The `tts_hush` receipt. */
   hush: { stopped: string; nothing: string };
-  /** What the bot reads; the environment prompt's variables and the tool receipts. */
+  /** What the bot reads; the tool receipts. */
   model: {
     notConnected: string;
-    /** The environment section that tells the bot what DSH is. */
-    envTitle: string;
-    envBody: string;
     sent: string;
     sendFailed: string;
     statusConnected: string;

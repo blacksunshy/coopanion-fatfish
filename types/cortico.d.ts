@@ -100,11 +100,26 @@ declare module 'cortico/core/types.ts' {
     getMethods?: readonly string[];
   }
 
+  export interface WorldPromptVar {
+    name: string;
+    description: string;
+  }
+
+  export interface WorldPromptDoc {
+    key: string;
+    title: string;
+    description?: string;
+    path: string;
+    role?: 'envPrompt';
+    vars?: WorldPromptVar[];
+  }
+
   export interface WorldWebUiDecl {
     label?: string;
     lamps?: WorldLamp[];
     badges?: Array<{ label: string; value: string | number; tone?: 'on' | 'off' | 'plain' }>;
     panels?: WorldPanelDecl[];
+    promptDocs?: WorldPromptDoc[];
     invoke?(panel: string, method: string, args: unknown[]): Promise<unknown>;
     config?: import('cortico/core/config-schema.ts').ConfigGroup[];
   }

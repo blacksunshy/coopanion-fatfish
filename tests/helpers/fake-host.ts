@@ -15,9 +15,16 @@ export class FakeHost implements WorldHost {
   store = {
     get: (cursor: number) => this.all.find((e) => e.cursor === cursor),
     latestCursor: () => this.all.length,
-    range: (q: { source?: string; toCursor?: number; limit?: number }) => {
-      const hit = this.all.filter((e) => (!q.source || e.source === q.source) && (q.toCursor === undefined || e.cursor <= q.toCursor));
-      return q.limit === undefined ? hit : hit.slice(-q.limit);
+    range: (q: { source?: string; fromCursor?: number; toCursor?: number; limit?: number }) => {
+      const hit = this.all.filter(
+        (e) =>
+          (!q.source || e.source === q.source) &&
+          (q.fromCursor === undefined || e.cursor >= q.fromCursor) &&
+          (q.toCursor === undefined || e.cursor <= q.toCursor),
+      );
+      // Core reads a fromCursor window forward and keeps the first `limit`; only a
+      // limit without a start reads backwards from the tail.
+      return q.limit === undefined ? hit : q.fromCursor === undefined ? hit.slice(-q.limit) : hit.slice(0, q.limit);
     },
   } as unknown as WorldHost['store'];
   blob = (): { bytes: Uint8Array; mime: string } | null => null;

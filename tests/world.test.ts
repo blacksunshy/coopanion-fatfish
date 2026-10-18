@@ -148,7 +148,7 @@ describe('the person\'s own lines', () => {
     expect(notices(host).join('\n')).toContain('你帮我看看');
   });
 
-  it('are not handed over twice when a restart looks back over them', async () => {
+  it('are not handed over again after a restart, which reads only newer lines', async () => {
     const { world, host, fromPet } = await withHost((socket, frame) => {
       if (frame.t === 'say') socket.send(JSON.stringify({ t: 'accepted', id: frame.id }));
     });
@@ -160,7 +160,8 @@ describe('the person\'s own lines', () => {
     const restarted = new FatfishWorld({ cfg: { url: world.state().url as string } } as never);
     await restarted.start(host as never);
     await until(() => restarted.state().connected === true);
-    // two full scan cycles, so a line the restart re-read had every chance to be handed over again
+    // two full scan cycles: the restart starts at the newest event, so the old line
+    // had every chance to be handed over again if the restart re-read it
     await new Promise((done) => setTimeout(done, 4600));
     expect(fromPet.filter((f) => f.t === 'say')).toHaveLength(1);
     await restarted.stop();

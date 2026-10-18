@@ -26,7 +26,7 @@
     },
     {
       "name": "tts_hush",
-      "description": "Stop the voice that reads your replies aloud, right now. Call it when the person asks for silence, asks you to skip the rest of what you were saying, or before a long stretch of quiet work. It affects only the sound; the bubble text is untouched.",
+      "description": "Stop the voice that reads your replies aloud, right now. Call it when the person asks for silence, asks you to skip the rest of what you were saying, or before a long stretch of quiet work. It stops the line being spoken and drops the lines still queued; nothing queued after it is spoken. It affects only the sound; the bubble text is untouched.",
       "tags": [
         "speak"
       ],
@@ -35,8 +35,8 @@
         "properties": {}
       },
       "summary": {
-        "zh": "立即停止语音朗读。",
-        "en": "Stop the read-aloud voice right away."
+        "zh": "立即停止语音朗读，并清掉还在排队的句子。",
+        "en": "Stop the read-aloud voice right away and drop the queued lines."
       }
     }
   ],
@@ -48,6 +48,14 @@
         "en": "Bridge notices: a person's line handed to DSH, DSH turn progress, replies and tool calls, pending approvals or questions, and errors."
       },
       "trigger": "flush"
+    }
+  ],
+  "prompts": [
+    {
+      "key": "worlds.fatfish.envPrompt",
+      "title": "大肥鱼功能复合包 · 环境提示词",
+      "role": "envPrompt",
+      "content": "DeepSeek Harness（下称 DSH）在另一台进程里跑编码任务，它的桥接插件把进展送到这里：一轮开始与结束时你会收到一条事件，DSH 的回复正文、正在调用的工具、等你批准的授权与等人物回答的提问也会送来。\r\n\r\n这些事件是通知，不是人物对你说的话：要不要冒泡、说什么，由你判断。人物在 DSH 里干活时通常盯着那边的窗口，只有确实值得打断才冒泡。\r\n\r\n用 `dsh_send` 可以把一句话交给 DSH 当前的会话，DSH 会把它当作人物发的消息处理。人物没有要你转达什么时不要调用它。\r\n\r\n人物对你说的、打的与语音转写的话是否也送给 DSH，由「转发人物的话」决定；开启时 DSH 会收到一份，那条事件在 DSH 看来来自桌宠，不会自动触发 DSH 开口。桌宠自己的话是否送给 DSH，由「转发桌宠的话」决定，默认关闭。\r\n\r\n当前桥接状态：{{dsh.status}}\r\n当前朗读状态：{{tts.status}}\r\n"
     }
   ]
 }

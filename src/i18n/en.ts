@@ -47,13 +47,6 @@ export const en: FatfishText = {
   },
   model: {
     notConnected: '(DSH is not connected)',
-    envTitle: 'DSH',
-    envBody: [
-      'DeepSeek Harness (DSH) runs coding work in another process, and its bridge plugin sends the progress here: one event when a turn starts and one when it ends, plus the text of DSH replies, the tools it is calling, the approvals it waits for and the questions it waits for the person to answer.',
-      'Those events are notices, not words the person said to you: whether to bubble, and what to say, is your judgement. A person working in DSH is usually watching that window, so bubble only when interrupting is worth it.',
-      'Use `dsh_send` to hand one line to the DSH conversation; DSH treats it as a message from the person. Do not call it when the person asked you to relay nothing.',
-      "Whether what the person says to you, types and has transcribed is also sent to DSH depends on the \"Relay the person\" setting; while it is on, DSH receives a copy, and from DSH's side that event comes from the pet and does not make DSH speak by itself.",
-    ].join('\n\n'),
     sent: 'Handed to DSH.',
     sendFailed: 'Not handed to DSH: {reason}',
     statusConnected: 'Connected (session {session}, model {model})',

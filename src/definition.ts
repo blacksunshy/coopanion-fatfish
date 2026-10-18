@@ -39,10 +39,11 @@ const DESCRIBE: WorldDescribe = {
       description:
         'Stop the voice that reads your replies aloud, right now. ' +
         'Call it when the person asks for silence, asks you to skip the rest of what you were saying, or before a long stretch of quiet work. ' +
+        'It stops the line being spoken and drops the lines still queued; nothing queued after it is spoken. ' +
         'It affects only the sound; the bubble text is untouched.',
       tags: ['speak'],
       parameters: { type: 'object', properties: {} },
-      summary: { zh: '立即停止语音朗读。', en: 'Stop the read-aloud voice right away.' },
+      summary: { zh: '立即停止语音朗读，并清掉还在排队的句子。', en: 'Stop the read-aloud voice right away and drop the queued lines.' },
     },
   ],
   events: [

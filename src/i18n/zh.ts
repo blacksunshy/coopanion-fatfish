@@ -47,13 +47,6 @@ export const zh: FatfishText = {
   },
   model: {
     notConnected: '（DSH 未连接）',
-    envTitle: 'DSH',
-    envBody: [
-      'DeepSeek Harness（下称 DSH）在另一台进程里跑编码任务，它的桥接插件把进展送到这里：一轮开始与结束时你会收到一条事件，DSH 的回复正文、正在调用的工具、等你批准的授权与等人物回答的提问也会送来。',
-      '这些事件是通知，不是人物对你说的话：要不要冒泡、说什么，由你判断。人物在 DSH 里干活时通常盯着那边的窗口，只有确实值得打断才冒泡。',
-      '用 `dsh_send` 可以把一句话交给 DSH 当前的会话，DSH 会把它当作人物发的消息处理。人物没有要你转达什么时不要调用它。',
-      '人物自己对你说的、打的与语音转写的话是否也送给 DSH，由「转发人物的话」这个配置决定；开启时 DSH 会收到一份，那条事件在 DSH 看来来自桌宠，不会自动触发 DSH 开口。',
-    ].join('\n\n'),
     sent: '已交给 DSH。',
     sendFailed: '没有交给 DSH：{reason}',
     statusConnected: '已连接（会话 {session}，模型 {model}）',
