@@ -163,7 +163,7 @@ describe('a line the pet sends', () => {
     expect(await client.say('hi')).toBe('no conversation is open on the DSH side');
   });
 
-  it('is refused without sending when there is no connection', async () => {
+  it('reports unsent without writing when there is no connection', async () => {
     const client = new DshClient({
       url: () => 'ws://127.0.0.1:1/coopanion/pet',
       name: () => 'Coo',
@@ -171,7 +171,8 @@ describe('a line the pet sends', () => {
       onState: () => {},
       log: () => {},
     });
-    expect(await client.say('hi')).toBe('not connected to DSH');
+    // 'unsent' means the line provably never left, so the caller may queue it for a later bridge.
+    expect(await client.say('hi')).toBe('unsent');
   });
 });
 

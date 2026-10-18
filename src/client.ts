@@ -97,7 +97,12 @@ export class DshClient {
   }
 
   /**
-   * One line into DSH; resolves with the refusal reason, or null when DSH accepted it.
+   * One line into DSH; resolves `null` when DSH accepted it, `'unsent'` when the line provably
+   * never left (the bridge was down or the socket refused the write), or a reason otherwise.
+   *
+   * The split matters to the caller: an `'unsent'` line can be queued and handed over once the
+   * bridge is back, while a timeout means the line may have reached DSH anyway — re-sending that
+   * would put the person's words into the conversation twice, so the caller reports it instead.
    *
    * A `say` that never gets an answer resolves rather than hanging: the caller shows a bubble, and
    * a bubble that waits forever is worse than one that says the message did not arrive.
@@ -105,7 +110,7 @@ export class DshClient {
   say(text: string): Promise<string | null> {
     const body = text.trim().slice(0, SEND_MAX);
     if (!body) return Promise.resolve('empty message');
-    if (!this.connected) return Promise.resolve('not connected to DSH');
+    if (!this.connected) return Promise.resolve('unsent');
     const id = `p${++this.seq}`;
     return new Promise<string | null>((resolve) => {
       const timer = setTimeout(() => {
@@ -119,7 +124,7 @@ export class DshClient {
       } catch (err) {
         clearTimeout(timer);
         this.waiting.delete(id);
-        resolve(`could not send: ${(err as Error).message}`);
+        resolve('unsent');
       }
     });
   }

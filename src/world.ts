@@ -239,26 +239,36 @@ export class FatfishWorld implements World {
    *
    * Without that notice the bot sees the person's words arrive with no sign that DSH has them, and
    * hands the same line over again with `dsh_send`; DSH then wraps the copy in its own prefix, and
-   * the person's one line sits in the conversation twice. A line the bridge cannot carry right now
-   * — it is down, or it refused the frame — waits in `pending` instead of being dropped.
+   * the person's one line sits in the conversation twice. A line that provably never left — the
+   * bridge was down, the socket refused the write — waits in `pending` instead of being dropped; a
+   * line whose fate is unknown (a timeout, a refusal) is reported to the bot, which can re-send it
+   * with `dsh_send` if it judges the line never arrived.
    */
   private async sayToDsh(text: string, sourceCursor: number): Promise<void> {
     const client = this.client;
     if (!client) return;
-    if (await client.say(text) !== null) {
+    const refusal = await client.say(text);
+    if (refusal === null) {
+      this.handedOver.add(sourceCursor);
+      const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+      this.pushNotice(`[DSH] 已把「${shown}」转交给 DSH，不必再转一次。`, { kind: 'relayed', text, cursor: sourceCursor });
+      return;
+    }
+    if (refusal === 'unsent') {
       this.hold(text, sourceCursor);
       return;
     }
-    this.handedOver.add(sourceCursor);
-    const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
-    this.pushNotice(`[DSH] 已把「${shown}」转交给 DSH，不必再转一次。`, { kind: 'relayed', text, cursor: sourceCursor });
+    this.pushNotice(`[DSH] 有一句没有转交成功（${refusal}）。它可能已到达也可能没有；若你认为没到，可用 dsh_send 重发。`, { kind: 'relay-failed', text, cursor: sourceCursor });
   }
 
   /** One line aside for when the bridge is back; the oldest drops once the queue is full. */
   private hold(text: string, cursor: number): void {
     if (this.handedOver.has(cursor) || this.pending.some((p) => p.cursor === cursor)) return;
     this.pending.push({ text, cursor });
-    while (this.pending.length > PENDING_MAX) this.pending.shift();
+    while (this.pending.length > PENDING_MAX) {
+      const dropped = this.pending.shift()!;
+      this.pushNotice(`[DSH] 待转交的句子已积到 ${PENDING_MAX} 条，最早的一句被丢下：${dropped.text.slice(0, 60)}`, { kind: 'relay-dropped', text: dropped.text, cursor: dropped.cursor });
+    }
   }
 
   /** The lines the bridge could not carry while it was down, handed over oldest first. */
