@@ -220,7 +220,9 @@ export class FatfishWorld implements World {
   private relaySelf(line: string, cursor: number): void {
     if (this.opts.cfg.relayPet !== true || !this.client) return;
     if (this.handedOver.has(cursor)) return;
-    void this.sayToDsh(line, cursor);
+    // Silent: the bot has no reason to re-send a line it did not speak, so a
+    // receipt would only tempt it into commenting — the very loop `relayPet` risks.
+    void this.sayToDsh(line, cursor, false);
   }
 
   /**
@@ -242,23 +244,29 @@ export class FatfishWorld implements World {
    * the person's one line sits in the conversation twice. A line that provably never left — the
    * bridge was down, the socket refused the write — waits in `pending` instead of being dropped; a
    * line whose fate is unknown (a timeout, a refusal) is reported to the bot, which can re-send it
-   * with `dsh_send` if it judges the line never arrived.
+   * with `dsh_send` if it judges the line never arrived. Receipts are optional (`announce`): the
+   * pet's own lines ride silently, since the bot has nothing to re-send and a notice would only
+   * invite it to comment.
    */
-  private async sayToDsh(text: string, sourceCursor: number): Promise<void> {
+  private async sayToDsh(text: string, sourceCursor: number, announce = true): Promise<void> {
     const client = this.client;
     if (!client) return;
     const refusal = await client.say(text);
     if (refusal === null) {
       this.handedOver.add(sourceCursor);
-      const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
-      this.pushNotice(`[DSH] 已把「${shown}」转交给 DSH，不必再转一次。`, { kind: 'relayed', text, cursor: sourceCursor });
+      if (announce) {
+        const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+        this.pushNotice(`[DSH] 已把「${shown}」转交给 DSH，不必再转一次。`, { kind: 'relayed', text, cursor: sourceCursor });
+      }
       return;
     }
     if (refusal === 'unsent') {
       this.hold(text, sourceCursor);
       return;
     }
-    this.pushNotice(`[DSH] 有一句没有转交成功（${refusal}）。它可能已到达也可能没有；若你认为没到，可用 dsh_send 重发。`, { kind: 'relay-failed', text, cursor: sourceCursor });
+    if (announce) {
+      this.pushNotice(`[DSH] 有一句没有转交成功（${refusal}）。它可能已到达也可能没有；若你认为没到，可用 dsh_send 重发。`, { kind: 'relay-failed', text, cursor: sourceCursor });
+    }
   }
 
   /** One line aside for when the bridge is back; the oldest drops once the queue is full. */

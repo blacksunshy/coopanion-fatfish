@@ -167,6 +167,14 @@ describe('the person\'s own lines', () => {
     await restarted.stop();
   });
 
+  it('stay with the pet when the bridge is told not to relay them', async () => {
+    const { host, fromPet } = await withHost(undefined, { relayPerson: false });
+    await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '只跟 Coo 说的', meta: { via: 'chat', text: '只跟 Coo 说的' } } as never);
+    // a full scan cycle, to prove the relay guard held
+    await new Promise((done) => setTimeout(done, 2600));
+    expect(fromPet.some((f) => f.t === 'say')).toBe(false);
+  });
+
   it('are not echoed back when DSH was the one who said them', async () => {
     const { host, fromPet } = await withHost();
     await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '来自 DSH', meta: { via: 'dsh', relayed: true, text: '来自 DSH' } } as never);
@@ -174,12 +182,35 @@ describe('the person\'s own lines', () => {
     await new Promise((done) => setTimeout(done, 2600));
     expect(fromPet.some((f) => f.t === 'say')).toBe(false);
   });
+});
 
-  it('stay with the pet when the bridge is told not to relay them', async () => {
-    const { host, fromPet } = await withHost(undefined, { relayPerson: false });
-    await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '只跟 Coo 说的', meta: { via: 'chat', text: '只跟 Coo 说的' } } as never);
-    // a full scan cycle, to prove the relay guard held
-    await new Promise((done) => setTimeout(done, 2600));
+describe('the pet\'s own lines (relayPet)', () => {
+  it('are carried to DSH silently, with no receipt the bot could comment on', async () => {
+    const { host, fromPet } = await withHost(undefined, { relayPet: true });
+    await host.pushEvent({
+      type: 'desktop-pet.self',
+      source: 'desktop-pet',
+      ts: new Date().toISOString(),
+      text: '我自己说的',
+      meta: { kind: 'say', beats: [{ text: '我自己说的' }] },
+    } as never);
+    await until(() => fromPet.some((f) => f.t === 'say'));
+    expect(fromPet.find((f) => f.t === 'say')).toMatchObject({ text: '我自己说的' });
+    // a full scan cycle later, still no receipt: the bot has nothing to re-send here
+    await new Promise((done) => setTimeout(done, 400));
+    expect(notices(host)).toHaveLength(0);
+  });
+
+  it('stay local when relayPet is off', async () => {
+    const { host, fromPet } = await withHost(undefined, { relayPet: false });
+    await host.pushEvent({
+      type: 'desktop-pet.self',
+      source: 'desktop-pet',
+      ts: new Date().toISOString(),
+      text: '我自己说的',
+      meta: { kind: 'say', beats: [{ text: '我自己说的' }] },
+    } as never);
+    await new Promise((done) => setTimeout(done, 400));
     expect(fromPet.some((f) => f.t === 'say')).toBe(false);
   });
 });
