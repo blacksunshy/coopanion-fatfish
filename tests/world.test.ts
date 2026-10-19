@@ -222,3 +222,61 @@ describe('what the bot is told about handing a line over', () => {
     expect(tool.description).toContain('do not reach DSH on their own');
   });
 });
+
+describe('when the bridge cannot connect', () => {
+  /** A port nothing listens on yet; the DSH Host may arrive late on it. */
+  async function freePort(): Promise<number> {
+    const srv = createServer();
+    await new Promise<void>((done) => srv.listen(0, '127.0.0.1', () => done()));
+    const port = (srv.address() as AddressInfo).port;
+    await new Promise<void>((done) => srv.close(() => done()));
+    return port;
+  }
+
+  it('queues lines during the grace window and hands them over when DSH arrives late', async () => {
+    const port = await freePort();
+    const host = new FakeHost();
+    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` } } as never);
+    await world.start(host as never);
+    await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '迟到前的一句', meta: { via: 'chat', text: '迟到前的一句' } } as never);
+    await until(() => (world as unknown as { pending: Array<{ text: string }> }).pending.length === 1);
+    expect(notices(host)).toHaveLength(0); // still inside the grace window: nothing dropped, nothing announced
+
+    // DSH shows up on the very port the retry loop keeps circling
+    const wss = new WebSocketServer({ noServer: true });
+    const http = createServer();
+    const fromPet: Array<Record<string, unknown>> = [];
+    http.on('upgrade', (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on('message', (data) => {
+          const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+          fromPet.push(frame);
+          if (frame.t === 'hello') ws.send(JSON.stringify({ t: 'ready', v: 1, session: 'session-late', cwd: '/w', model: 'deepseek-flash' }));
+          if (frame.t === 'say') ws.send(JSON.stringify({ t: 'accepted', id: frame.id }));
+        });
+      });
+    });
+    await new Promise<void>((done) => http.listen(port, '127.0.0.1', () => done()));
+    await until(() => world.state().connected === true, 6000);
+    await until(() => fromPet.some((f) => f.t === 'say'));
+    expect(fromPet.find((f) => f.t === 'say')).toMatchObject({ text: '迟到前的一句' });
+    await world.stop();
+    wss.close();
+    await new Promise<void>((done) => http.close(() => done()));
+  });
+
+  it('lets lines go silently once the grace window has passed and no DSH has ever shown up', async () => {
+    const port = await freePort();
+    const host = new FakeHost();
+    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` } } as never);
+    await world.start(host as never);
+    // the grace window has passed and the bridge has never connected: a voice-only setup
+    (world as unknown as { graceUntil: number }).graceUntil = Date.now() - 1;
+    await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '没人听的一句', meta: { via: 'chat', text: '没人听的一句' } } as never);
+    // a full scan cycle plus a bit: the line was neither queued nor turned into a notice
+    await new Promise((done) => setTimeout(done, 2600));
+    expect((world as unknown as { pending: Array<unknown> }).pending).toHaveLength(0);
+    expect(notices(host)).toHaveLength(0);
+    await world.stop();
+  });
+});

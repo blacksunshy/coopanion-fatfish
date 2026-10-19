@@ -41,6 +41,8 @@ const SCAN_LIMIT = 50;
 const SCAN_MS = 1500;
 /** The person's lines that may wait for the bridge while it is down; beyond this the oldest drops. */
 const PENDING_MAX = 16;
+/** How long after startup the bridge still queues lines for a DSH that has never shown up. */
+const GRACE_MS = 30_000;
 
 export interface FatfishWorldOptions {
   /** The live `worlds.fatfish` section. */
@@ -89,6 +91,10 @@ export class FatfishWorld implements World {
   private readonly handedOver = new Set<number>();
   /** The person's lines waiting for the bridge to come back; capped at `PENDING_MAX`. */
   private readonly pending: Array<{ text: string; cursor: number }> = [];
+  /** True once the bridge has actually connected in this run; queueing only makes sense then. */
+  private everConnected = false;
+  /** Until when a never-connected bridge still queues lines, in case DSH starts a little late. */
+  private graceUntil = 0;
   private scanTimer: NodeJS.Timeout | null = null;
   private readonly speaker = new Speaker();
   /** Serialises speech: one clip at a time, the next starting as this one ends. */
@@ -123,6 +129,7 @@ export class FatfishWorld implements World {
 
   async start(host: WorldHost): Promise<void> {
     this.host = host;
+    this.graceUntil = Date.now() + GRACE_MS;
     const latest = host.store.latestCursor();
     this.voiceCursor = latest;
     this.bridgeCursor = latest;
@@ -137,6 +144,7 @@ export class FatfishWorld implements World {
           this.session = session?.session ?? '';
           this.model = session?.model ?? '';
           if (connected) {
+            this.everConnected = true;
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
           }
@@ -269,9 +277,18 @@ export class FatfishWorld implements World {
     }
   }
 
-  /** One line aside for when the bridge is back; the oldest drops once the queue is full. */
+  /**
+   * One line aside for when the bridge is back; the oldest drops once the queue is full.
+   *
+   * Queueing only makes sense while a late-starting DSH may still show up (the grace window), or
+   * once the bridge has actually connected in this run and could come back. With no DSH installed
+   * or enabled, the bridge never connects and voice-only users would pile up sixteen lines and
+   * then collect a "dropped" notice per line spoken — so past the grace window, a never-connected
+   * bridge lets the line go silently: no queue, no notice, no flush waking the bot.
+   */
   private hold(text: string, cursor: number): void {
     if (this.handedOver.has(cursor) || this.pending.some((p) => p.cursor === cursor)) return;
+    if (!this.everConnected && Date.now() >= this.graceUntil) return;
     this.pending.push({ text, cursor });
     while (this.pending.length > PENDING_MAX) {
       const dropped = this.pending.shift()!;
