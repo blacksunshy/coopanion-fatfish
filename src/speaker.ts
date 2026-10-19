@@ -2,10 +2,10 @@
  * The mouth of the TTS World: one line of text in, one spoken clip out.
  *
  * Synthesis goes through the vendored Edge TTS client (src/vendor/msedge-tts), whose WebSocket
- * is reused across lines; playback hands the clip to a PowerShell child running winmm MCI,
- * whose `play … wait` blocks until the clip ends, so the child's exit is the end of the speech.
- * A new line kills the child still speaking, the way Coo starting a new sentence cuts the
- * previous one short.
+ * is reused across lines; playback hands the clip to a player child — winmm MCI via PowerShell
+ * on Windows, the built-in `afplay` on macOS — whose `play … wait` blocks until the clip ends,
+ * so the child's exit is the end of the speech. A new line kills the child still speaking, the
+ * way Coo starting a new sentence cuts the previous one short.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -34,10 +34,10 @@ export class Speaker {
 
   /** One line spoken aloud; resolves when playback ends or is cut. `false` means synthesis failed and the line was skipped. */
   async speak(text: string, opts: SpeakOptions, log: (line: string) => void): Promise<boolean> {
-    if (process.platform !== 'win32') {
+    if (process.platform !== 'win32' && process.platform !== 'darwin') {
       if (!this.warnedPlatform) {
         this.warnedPlatform = true;
-        log('TTS playback needs Windows; skipping');
+        log(`TTS playback needs Windows or macOS; skipping on ${process.platform}`);
       }
       return false;
     }
@@ -85,18 +85,24 @@ export class Speaker {
     }
   }
 
-  /** Plays one clip through winmm MCI; the child's exit is the end of the speech, and killing it is the interruption. */
+  /** Plays one clip; the player child's exit is the end of the speech, and killing it is the interruption. */
   private play(clip: string, log: (line: string) => void): Promise<void> {
     this.hush();
-    const quoted = `"${clip}"`;
-    const script = [
-      "Add-Type -Namespace WinMM -Name MCI -MemberDefinition '[DllImport(\"winmm.dll\", CharSet=CharSet.Auto)] public static extern int mciSendString(string cmd, System.Text.StringBuilder ret, int len, System.IntPtr hwnd);'",
-      `[WinMM.MCI]::mciSendString('open ${quoted} type mpegvideo alias tts', $null, 0, [System.IntPtr]::Zero) | Out-Null`,
-      "[WinMM.MCI]::mciSendString('play tts wait', $null, 0, [System.IntPtr]::Zero) | Out-Null",
-      "[WinMM.MCI]::mciSendString('close tts', $null, 0, [System.IntPtr]::Zero) | Out-Null",
-    ].join('; ');
     return new Promise((resolve) => {
-      const child = spawn('powershell', ['-NoProfile', '-Command', script], { stdio: 'ignore', windowsHide: true });
+      let child: ChildProcess;
+      if (process.platform === 'darwin') {
+        // afplay ships with macOS and, like MCI's `play … wait`, blocks until the clip ends.
+        child = spawn('afplay', [clip], { stdio: 'ignore' });
+      } else {
+        const quoted = `"${clip}"`;
+        const script = [
+          "Add-Type -Namespace WinMM -Name MCI -MemberDefinition '[DllImport(\"winmm.dll\", CharSet=CharSet.Auto)] public static extern int mciSendString(string cmd, System.Text.StringBuilder ret, int len, System.IntPtr hwnd);'",
+          `[WinMM.MCI]::mciSendString('open ${quoted} type mpegvideo alias tts', $null, 0, [System.IntPtr]::Zero) | Out-Null`,
+          "[WinMM.MCI]::mciSendString('play tts wait', $null, 0, [System.IntPtr]::Zero) | Out-Null",
+          "[WinMM.MCI]::mciSendString('close tts', $null, 0, [System.IntPtr]::Zero) | Out-Null",
+        ].join('; ');
+        child = spawn('powershell', ['-NoProfile', '-Command', script], { stdio: 'ignore', windowsHide: true });
+      }
       this.player = child;
       child.once('exit', () => {
         if (this.player === child) this.player = null;
