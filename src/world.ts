@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { DshClient, PROTOCOL_VERSION, type HostFrame } from './client.ts';
 import { speakable } from './clean.ts';
 import { DEFAULT_URL, FATFISH_ID, RELAY_MAX, SEND_MAX, fatfishConfigGroups, type FatfishConfigSection } from './config.ts';
+import { discoverBridge } from './discover.ts';
 import { fatfishText, type FatfishText } from './i18n/index.ts';
 import { DEFAULT_VOICE } from './voices.ts';
 import { Speaker, type SpeakOptions } from './speaker.ts';
@@ -43,6 +44,8 @@ const SCAN_MS = 1500;
 const PENDING_MAX = 16;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
+/** The quiet period between two port sweeps: a sweep costs ~2s, and retries come as often as 1s. */
+const DISCOVER_COOLDOWN_MS = 20_000;
 
 export interface FatfishWorldOptions {
   /** The live `worlds.fatfish` section. */
@@ -51,6 +54,12 @@ export interface FatfishWorldOptions {
   language?(): Language;
   /** The name this pet gives DSH. */
   name?(): string;
+  /**
+   * Look for the Host on loopback when the address we hold stops answering. On by default: DSH picks
+   * its port at launch, so a configured URL outlives it. A test that has to own the exact address
+   * turns it off rather than let whichever Host this machine runs shadow its own listener.
+   */
+  discover?: boolean;
 }
 
 /** The text one self event reads as; empty for events that say nothing speakable. */
@@ -105,6 +114,14 @@ export class FatfishWorld implements World {
   private queuedSpeech = 0;
   private speaking = false;
   private failed = false;
+  /** The address discovery last found; it wins over the configured URL while DSH stays where it is. */
+  private discoveredUrl: string | null = null;
+  /** True while a sweep is in flight, so the reconnect loop cannot stack sweeps. */
+  private discovering = false;
+  /** When the last sweep started; paces the loop below. */
+  private discoveredAt = 0;
+  /** False once stop() ran, so a sweep still in flight does not revive a World that is leaving. */
+  private running = false;
 
   constructor(private readonly opts: FatfishWorldOptions) {}
 
@@ -112,9 +129,59 @@ export class FatfishWorld implements World {
     return fatfishText(this.opts.language?.() ?? 'zh');
   }
 
-  private get url(): string {
+  /** The URL the person configured, or the shipped default when they left it empty. */
+  private get configuredUrl(): string {
     const url = this.opts.cfg.url;
     return typeof url === 'string' && url.trim() ? url.trim() : DEFAULT_URL;
+  }
+
+  /** The address to dial: whatever discovery last found, else the configured one. */
+  private get url(): string {
+    return this.discoveredUrl ?? this.configuredUrl;
+  }
+
+  /** The configured URL with only its port replaced; host, path and query stay as the person set them. */
+  private urlAtPort(port: number): string {
+    try {
+      const next = new URL(this.configuredUrl);
+      next.port = String(port);
+      return next.toString();
+    } catch {
+      return `ws://127.0.0.1:${port}/coopanion/pet`;
+    }
+  }
+
+  /**
+   * Looks for the Host on loopback when the address we hold stops answering.
+   *
+   * DSH picks its web port at launch, so a configured URL outlives the port it names. The sweep is
+   * paid for only after a connection has already failed, and the cooldown keeps a DSH that simply
+   * is not running from costing one on every retry.
+   */
+  private async rediscover(): Promise<void> {
+    const host = this.host;
+    if (!this.running || !host || this.discovering) return;
+    // The address discovery found is not answering either, or we would not be here: fall back to
+    // the configured one for the retries in between, and let the sweep below look for where the
+    // Host went. A discovered address is a hint about the past, not a replacement for the config.
+    this.discoveredUrl = null;
+    const now = Date.now();
+    if (now - this.discoveredAt < DISCOVER_COOLDOWN_MS) return;
+    this.discovering = true;
+    this.discoveredAt = now;
+    try {
+      const found = await discoverBridge({ version: PROTOCOL_VERSION, shouldStop: () => !this.running });
+      if (!found || !this.running) return;
+      const next = this.urlAtPort(found.port);
+      if (next === this.configuredUrl) return;
+      this.discoveredUrl = next;
+      host.log.info(`DSH bridge moved to 127.0.0.1:${found.port}, reconnecting`);
+      this.client?.retryNow();
+    } catch {
+      // A sweep that throws is a sweep that found nothing; the retry loop will come back to it.
+    } finally {
+      this.discovering = false;
+    }
   }
 
   private get voice(): SpeakOptions {
@@ -128,6 +195,7 @@ export class FatfishWorld implements World {
   }
 
   async start(host: WorldHost): Promise<void> {
+    this.running = true;
     this.host = host;
     this.graceUntil = Date.now() + GRACE_MS;
     const latest = host.store.latestCursor();
@@ -147,6 +215,8 @@ export class FatfishWorld implements World {
             this.everConnected = true;
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
+          } else if (this.opts.discover !== false) {
+            void this.rediscover();
           }
         },
         log: (level, text) => {
@@ -162,6 +232,7 @@ export class FatfishWorld implements World {
   }
 
   async stop(): Promise<void> {
+    this.running = false;
     if (this.scanTimer) {
       clearInterval(this.scanTimer);
       this.scanTimer = null;

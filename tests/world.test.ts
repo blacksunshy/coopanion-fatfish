@@ -224,6 +224,11 @@ describe('what the bot is told about handing a line over', () => {
 });
 
 describe('when the bridge cannot connect', () => {
+  /**
+   * These two own the exact address, so the loopback fallback is off: with it on, a Host already
+   * running on the developer's machine would answer the sweep before the listener this test starts,
+   * and the assertions would be about that Host instead.
+   */
   /** A port nothing listens on yet; the DSH Host may arrive late on it. */
   async function freePort(): Promise<number> {
     const srv = createServer();
@@ -236,7 +241,7 @@ describe('when the bridge cannot connect', () => {
   it('queues lines during the grace window and hands them over when DSH arrives late', async () => {
     const port = await freePort();
     const host = new FakeHost();
-    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` } } as never);
+    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` }, discover: false } as never);
     await world.start(host as never);
     await host.pushEvent({ type: 'desktop-pet.message', source: 'desktop-pet', ts: new Date().toISOString(), text: '迟到前的一句', meta: { via: 'chat', text: '迟到前的一句' } } as never);
     await until(() => (world as unknown as { pending: Array<{ text: string }> }).pending.length === 1);
@@ -268,7 +273,7 @@ describe('when the bridge cannot connect', () => {
   it('lets lines go silently once the grace window has passed and no DSH has ever shown up', async () => {
     const port = await freePort();
     const host = new FakeHost();
-    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` } } as never);
+    const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet` }, discover: false } as never);
     await world.start(host as never);
     // the grace window has passed and the bridge has never connected: a voice-only setup
     (world as unknown as { graceUntil: number }).graceUntil = Date.now() - 1;

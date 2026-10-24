@@ -97,6 +97,18 @@ export class DshClient {
   }
 
   /**
+   * Reconnect at once instead of waiting out the backoff. Called when the address itself moved: the
+   * timer only exists to space out attempts against an address we still believe in.
+   */
+  retryNow(): void {
+    if (this.stopped || this.timer === null) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.attempt = 0;
+    this.connect();
+  }
+
+  /**
    * One line into DSH; resolves `null` when DSH accepted it, `'unsent'` when the line provably
    * never left (the bridge was down or the socket refused the write), or a reason otherwise.
    *
