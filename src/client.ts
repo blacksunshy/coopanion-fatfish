@@ -24,7 +24,11 @@ export type HostFrame =
   | { t: 'question'; text: string }
   | { t: 'error'; text: string }
   | { t: 'accepted'; id: string }
-  | { t: 'refused'; id: string; reason: string };
+  | { t: 'refused'; id: string; reason: string }
+  /** Answer to a `pick` request: the pet now speaks into this session. */
+  | { t: 'picked'; session: string }
+  /** Answer to a `pick` request: the Host refused the switch (session not live). */
+  | { t: 'refused'; reason: string };
 
 export interface DshClientOptions {
   /** Read at each attempt, so a corrected address is used by the next reconnect. */
@@ -55,6 +59,8 @@ export class DshClient {
   private stopped = true;
   /** `say` frames waiting for the Host's answer, by id. */
   private readonly waiting = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
+  /** `pick` frames waiting for the Host's answer, by session id. */
+  private readonly waitingPick = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
   private seq = 0;
 
   constructor(private readonly opts: DshClientOptions) {}
@@ -80,6 +86,11 @@ export class DshClient {
       entry.resolve('the bridge stopped before DSH answered');
     }
     this.waiting.clear();
+    for (const [, entry] of this.waitingPick) {
+      clearTimeout(entry.timer);
+      entry.resolve('the bridge stopped before DSH answered');
+    }
+    this.waitingPick.clear();
     const socket = this.socket;
     this.socket = null;
     if (socket) {
@@ -141,6 +152,34 @@ export class DshClient {
     });
   }
 
+  /**
+   * Point the pet at a specific DSH session. Resolves `null` when the Host switched, or the refusal
+   * reason (typically the session is not open). Resolves `'unsent'` when the bridge is down.
+   *
+   * The Host's default owner is the newest live session; this lets a person keep using an older one
+   * after archiving the current conversation.
+   */
+  pick(session: string): Promise<string | null> {
+    const id = session.trim().slice(0, 128);
+    if (!id) return Promise.resolve('empty session id');
+    if (!this.connected) return Promise.resolve('unsent');
+    return new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => {
+        this.waitingPick.delete(id);
+        resolve('DSH did not answer in time');
+      }, 15_000);
+      timer.unref?.();
+      this.waitingPick.set(id, { resolve, timer });
+      try {
+        this.socket!.send(JSON.stringify({ t: 'pick', session: id }));
+      } catch {
+        clearTimeout(timer);
+        this.waitingPick.delete(id);
+        resolve('unsent');
+      }
+    });
+  }
+
   private connect(): void {
     if (this.stopped) return;
     let socket: WebSocket;
@@ -169,11 +208,29 @@ export class DshClient {
         return;
       }
       if (frame.t === 'accepted' || frame.t === 'refused') {
-        const entry = this.waiting.get(frame.id);
+        // A `refused` frame without an id answers a `pick`, not a `say`.
+        if (frame.t === 'refused' && !('id' in frame)) {
+          const entry = [...this.waitingPick.values()][0];
+          if (!entry) return;
+          clearTimeout(entry.timer);
+          this.waitingPick.clear();
+          entry.resolve(frame.reason);
+          return;
+        }
+        const entry = this.waiting.get((frame as { id: string }).id);
         if (!entry) return;
         clearTimeout(entry.timer);
-        this.waiting.delete(frame.id);
-        entry.resolve(frame.t === 'accepted' ? null : frame.reason);
+        this.waiting.delete((frame as { id: string }).id);
+        entry.resolve(frame.t === 'accepted' ? null : (frame as { reason: string }).reason);
+        return;
+      }
+      if (frame.t === 'picked') {
+        const entry = this.waitingPick.get(frame.session);
+        if (entry) {
+          clearTimeout(entry.timer);
+          this.waitingPick.delete(frame.session);
+          entry.resolve(null);
+        }
         return;
       }
       this.opts.onFrame(frame);
@@ -252,8 +309,14 @@ export function parseHostFrame(raw: string): HostFrame | null {
     case 'accepted':
     case 'refused': {
       const id = str('id');
+      // A `refused` with no id answers a `pick` request; one with an id answers a `say`.
+      if (frame.t === 'refused' && id === null) return { t: 'refused', reason: str('reason') ?? '' };
       if (id === null) return null;
       return frame.t === 'accepted' ? { t: 'accepted', id } : { t: 'refused', id, reason: str('reason') ?? '' };
+    }
+    case 'picked': {
+      const session = str('session');
+      return session === null ? null : { t: 'picked', session };
     }
     default:
       return null;

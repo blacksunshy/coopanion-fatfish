@@ -468,6 +468,29 @@ export class FatfishWorld implements World {
         },
       },
       {
+        name: 'dsh_pick_session',
+        description: [
+          'Point this pet at a different DeepSeek Harness session, by its id.',
+          'By default the pet follows the newest open conversation; use this when the person wants your words to go into an older one (for example after archiving the current session).',
+          'It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: {
+          type: 'object',
+          properties: {
+            session: { type: 'string', maxLength: 128, description: 'The id of the DSH session to speak into.' },
+          },
+          required: ['session'],
+        },
+        handler: async (args) => {
+          const session = typeof args.session === 'string' ? args.session : '';
+          if (!session.trim()) return '未指定会话 id。';
+          if (!this.client) return t.notConnected;
+          const refusal = await this.client.pick(session);
+          return refusal === null ? `已切换到 DSH 会话 ${session}。` : `切换失败：${refusal}`;
+        },
+      },
+      {
         name: 'tts_hush',
         description: [
           'Stop the voice that reads your replies aloud, right now.',

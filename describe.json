@@ -25,6 +25,30 @@
       }
     },
     {
+      "name": "dsh_pick_session",
+      "description": "Point this pet at a different DeepSeek Harness session, by its id. By default the pet follows the newest open conversation; use this when the person wants your words to go into an older one (for example after archiving the current session). It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.",
+      "tags": [
+        "speak"
+      ],
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "The id of the DSH session to speak into."
+          }
+        },
+        "required": [
+          "session"
+        ]
+      },
+      "summary": {
+        "zh": "把桌宠说话的对象切到另一个 DSH 会话（按 id）。",
+        "en": "Switch the DSH session the pet speaks into, by id."
+      }
+    },
+    {
       "name": "tts_hush",
       "description": "Stop the voice that reads your replies aloud, right now. Call it when the person asks for silence, asks you to skip the rest of what you were saying, or before a long stretch of quiet work. It stops the line being spoken and drops the lines still queued; nothing queued after it is spoken. It affects only the sound; the bubble text is untouched.",
       "tags": [
