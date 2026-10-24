@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "type": "module",
   "description": "和 DeepSeek Harness（DSH）对话让它帮你干活写代码，宠物回复时用内置语音包读出声（朗读支持 Windows 与 macOS）。桥接这半边需要先装 DSH 的 Host 插件（coopanion-connector-dsh）才会连；不会装就看源码仓库的说明，或把仓库地址交给 AI 帮你装。/ Chat with DeepSeek Harness (DSH) so it does the work — writing code for you — and hear the pet's replies read aloud with built-in voices (Windows and macOS). The bridge half needs the DSH Host extension first; if that sounds hard, open the source repo and let an AI walk you through it.",
   "author": "blacksunshy",

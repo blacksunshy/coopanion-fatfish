@@ -1,5 +1,9 @@
 # 更新说明
 
+## 0.4.0
+
+- 新增 DSH 断线自动找回（来自 @hitenkeifans 的 PR #4）：DSH 桌面端每次启动都换临时端口，配置的地址会失效。现在连不上时会扫回环临时端口段（49152–65535，约 2 秒、20 秒冷却、只在断线后扫），用 `/coopanion/status` 认出 Host 后自动改地址重连；发现的地址失效时回落到配置地址。测试可用 `discover: false` 关掉
+
 ## 0.3.9
 
 - 修复语音合成完全失效：微软把 Edge 朗读接口的认证升级为 Sec-MS-GEC v2，且 Akamai 边缘节点对「不像 Edge 客户端」的握手直接回 HTTP 200 拒绝升级（报 `Unexpected server response: 200`）。vendor 内的 `MsEdgeTTS` 升级为 v2 token（CS64+SHA256 两段式，算法移植自 readest PR #6751 / rany2/edge-tts PR #492，含官方测试向量），`Sec-MS-GEC-Version` 升到 `2-`，握手头补齐到 Edge 客户端全套（`Cookie: muid`、`Sec-CH-UA*`、`Sec-Fetch-*` 等——Electron 宿主比普通 Node 更挑，只补部分头仍会 200，见 issue #2）。升级后需完全重启 Coopanion（必要时清 `data\tmp\tsx-windows` 与 `data\tmp\node-compile-cache`）
