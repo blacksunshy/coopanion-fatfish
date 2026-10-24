@@ -60,6 +60,71 @@ interface SynthesisStream {
   timeout?: NodeJS.Timeout;
 }
 
+// ---- Sec-MS-GEC v2 ----
+// Microsoft upgraded the read-aloud auth scheme around 2026-10: v1 (single SHA256 over
+// "<ticks><token>") is rejected — the old endpoint answers plain 403, and
+// api.msedgeservices.com answers a plain HTTP 200 instead of the 101 WebSocket upgrade.
+// v2 token = "<CS64 16hex>-<SHA256 64hex>" and requires Sec-MS-GEC-Version "2-".
+// Ported from readest PR #6751 (a TS port of rany2/edge-tts PR #492), which ships an
+// official test vector; the vector is verified in tests/msedge-tts.test.ts.
+const WIN_EPOCH_OFFSET = 11644473600;
+const S_TO_NS = 1000000000;
+
+// "Copyright (C) Microsoft Corporation. All rights reserved." (57 bytes) as little-endian u32 words.
+const GEC_PREFIX_WORDS = [
+  0x79706f43, 0x68676972, 0x43282074, 0x694d2029, 0x736f7263, 0x2074666f,
+  0x70726f43, 0x7461726f, 0x2e6e6f69, 0x6c6c4120, 0x67697220, 0x20737468,
+  0x65736572, 0x64657672, 0x0000002e,
+];
+const GEC_PREFIX_LENGTH = 57;
+
+const rol16 = (x: number) => ((x << 16) | (x >>> 16)) >>> 0;
+
+// little-endian 32-bit words, zero-padded up to an 8-byte boundary
+const toWords = (bytes: Uint8Array) => {
+  const padded = new Uint8Array(Math.ceil(bytes.length / 8) * 8);
+  padded.set(bytes);
+  const view = new DataView(padded.buffer);
+  return Array.from({ length: padded.length / 4 }, (_, i) => view.getUint32(i * 4, true));
+};
+
+// CS64 first pass: word swap chain
+const cs64WordSwap = (words: number[], a: number, b: number) => {
+  let acc = 0;
+  let last = 0;
+  for (let i = 0; i < words.length; i += 2) {
+    const x = words[i]!;
+    const y = words[i + 1]!;
+    let t = rol16((Math.imul(rol16(x), 0xef0569fb) + Math.imul(x, a)) >>> 0);
+    let q = Math.imul(t, 0x76f50f34) >>> 0;
+    acc = (acc + Math.imul(rol16(q), 0xc3efea97) + q) >>> 0;
+    t = rol16((Math.imul(rol16(y), 0xc31713db) + Math.imul(y, b)) >>> 0);
+    q = Math.imul(t, 0x1881ce3c) >>> 0;
+    last = (Math.imul(rol16(q), 0x35bd1ec9) + q) >>> 0;
+    acc = (acc + last) >>> 0;
+  }
+  return [last, acc];
+};
+
+// CS64 second pass: reversible state chain
+const cs64Reversible = (words: number[], a: number, b: number) => {
+  let state = 0;
+  let acc = 0;
+  for (let i = 0; i < words.length; i += 2) {
+    state = Math.imul(state + words[i]!, a) >>> 0;
+    for (const c of [0xcf98b111, 0x87085b9f, 0x12ceb96d, 0x257e1d83]) {
+      state = Math.imul(rol16(state), c) >>> 0;
+    }
+    let t = Math.imul(words[i + 1]! + state, b) >>> 0;
+    t = Math.imul(rol16(t), 0xa27416f5) >>> 0;
+    t = rol16(Math.imul(rol16(t), 0xd38396ff) >>> 0);
+    acc = (acc + state) >>> 0;
+    state = Math.imul(rol16(Math.imul(t, 0x7c932b89) >>> 0), 0xbfa49f69) >>> 0;
+    acc = (acc + state) >>> 0;
+  }
+  return [state, acc];
+};
+
 export class MsEdgeTTS {
   static readonly TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
   static readonly WSS_URL = 'wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1';
@@ -102,9 +167,17 @@ export class MsEdgeTTS {
 
   /** The URL a client connects to; the clock-derived Sec-MS-GEC is part of the query. */
   static async getSynthUrl(): Promise<string> {
-    const reqId = MsEdgeTTS.generateUUID();
+    // Edge sends a 32-hex ConnectionId (no dashes), matching the reference clients
+    const reqId = MsEdgeTTS.randomHex(16);
     const secMsGec = await MsEdgeTTS.generateSecMsGec(MsEdgeTTS.TRUSTED_CLIENT_TOKEN);
-    return `${MsEdgeTTS.WSS_URL}?Ocp-Apim-Subscription-Key=${MsEdgeTTS.TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1-143.0.3650.96&ConnectionId=${reqId}`;
+    return `${MsEdgeTTS.WSS_URL}?Ocp-Apim-Subscription-Key=${MsEdgeTTS.TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=2-143.0.3650.75&ConnectionId=${reqId}`;
+  }
+
+  // Random 32-hex muid cookie; Edge's read-aloud endpoint rejects bare handshakes (plain
+  // HTTP 200 instead of the 101 upgrade) unless the request carries the same headers the
+  // browser sends — Cookie: muid, Accept-*, Cache-Control (mirrors readest edgeTTS.ts).
+  private static generateMuid(): string {
+    return MsEdgeTTS.randomHex(16).toUpperCase();
   }
 
   private _initClient(): Promise<void> {
@@ -140,8 +213,23 @@ export class MsEdgeTTS {
 
     const ws = this._ws = new WebSocket(synthUrl, {
       headers: {
+        // Full Edge client header set. Akamai rejects bare handshakes with a plain HTTP 200,
+        // and Electron's Node is pickier than CLI Node (subset that passes in CLI still gets
+        // 200 in the desktop host) — verified in coopanion-fatfish issue #2.
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
         'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'Sec-CH-UA': '"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+        'Sec-CH-UA-Mobile': '?0',
+        'Sec-CH-UA-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'websocket',
+        'Sec-Fetch-Site': 'none',
+        'Cookie': `muid=${MsEdgeTTS.generateMuid()};`,
       },
       agent: this._agent,
     });
@@ -312,15 +400,37 @@ export class MsEdgeTTS {
     });
   }
 
-  static async generateSecMsGec(trustedClientToken: string): Promise<string> {
-    const ticks = Math.floor((Date.now() + MsEdgeTTS._clockOffsetMs) / 1000) + 11644473600;
-    const rounded = ticks - (ticks % 300);
-    const windowsTicks = rounded * 10_000_000;
-    const data = new TextEncoder().encode(`${windowsTicks}${trustedClientToken}`);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase();
+  /**
+   * Sec-MS-GEC v2 token: "<CS64 16hex>-<SHA256 64hex>" over the copyright prefix plus
+   * "<ticks><token>". `now` is injectable so the official test vector can pin the clock.
+   */
+  static async generateSecMsGec(trustedClientToken: string, now = Date.now() + MsEdgeTTS._clockOffsetMs): Promise<string> {
+    let ticks = Math.floor(now / 1000);
+    ticks += WIN_EPOCH_OFFSET;
+    ticks -= ticks % 300; // 5-minute window
+    ticks *= S_TO_NS / 100; // 100ns units
+
+    const suffix = new TextEncoder().encode(`${ticks.toFixed(0)}${trustedClientToken}`);
+    const data = new Uint8Array(GEC_PREFIX_LENGTH + suffix.length);
+    const view = new DataView(data.buffer);
+    GEC_PREFIX_WORDS.forEach((word, i) => view.setUint32(i * 4, word, true));
+    data.set(suffix, GEC_PREFIX_LENGTH);
+
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+    const words = toWords(data);
+    const [key0, key1] = toWords(digest);
+    const a = (key0! | 1) >>> 0;
+    const b = (key1! | 1) >>> 0;
+
+    const [s0, s1] = cs64WordSwap(words, a, b);
+    const [r0, r1] = cs64Reversible(words, a, b);
+    const cs64 = new DataView(new ArrayBuffer(8));
+    cs64.setUint32(0, s0! ^ r0!, true);
+    cs64.setUint32(4, s1! ^ r1!, true);
+
+    const toHex = (bytes: Uint8Array) =>
+      Array.from(bytes, (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return `${toHex(new Uint8Array(cs64.buffer))}-${toHex(digest)}`;
   }
 
   private async _send(message: string, requestId?: string, initialSocket?: WebSocket): Promise<void> {
