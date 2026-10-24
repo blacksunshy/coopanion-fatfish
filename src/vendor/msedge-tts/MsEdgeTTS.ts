@@ -142,6 +142,21 @@ export class MsEdgeTTS {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
         'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        // api.msedgeservices.com answers `HTTP 200` instead of `101 Switching Protocols`
+        // unless the handshake carries the header set its Edge client sends. UA + Origin
+        // alone is not enough: Electron's Node (and, on this endpoint, plain Node too)
+        // gets the 200, which the `ws` client surfaces as `Unexpected server response: 200`.
+        'Accept': '*/*',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-CH-UA': '"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+        'Sec-CH-UA-Mobile': '?0',
+        'Sec-CH-UA-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'websocket',
+        'Sec-Fetch-Site': 'none',
       },
       agent: this._agent,
     });
