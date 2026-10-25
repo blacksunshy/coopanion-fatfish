@@ -3,7 +3,7 @@
 Coopanion 桌宠的 Cortico World 扩展。一句话：**和 DeepSeek Harness（DSH）对话，让它帮你干活、写代码；宠物回复你的时候，用内置语音包读出声。**
 
 - **让 DSH 干活**：把桌宠接上 DeepSeek Harness（DSH）——它听见你说话就替你转交给 DSH，DSH 干的活、写的代码、调的工具、等的批准，都变成消息回到对话里；没有回执的台词才需要宠物递话，重启后不会重复转交。
-- **回复有声音**：内置 16 个 Edge TTS 音色（晓晓、云希、Aria、Jenny 等），宠物回复你的同时读出声；语速、音量可调，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
+- **回复有声音**：内置 19 个 Edge TTS 音色（晓晓、云希、东北晓北、陕西晓妮、粤语曉曼、台湾曉臻、Aria、Jenny 等），另有一排「语音包」预设——温柔女声、活泼少女、播音腔、东北/陕西口音、粤语、台湾腔、English 各一档，选一个就把音色、语速、音高、音量整套换好；也可以选「自定义」自己调音色、语速、音高、音量。宠物回复你的同时读出声，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
 - **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。
 
 两半共用一次事件扫描，各自记各自的进度，都只读启动之后的新消息：语音从启动后的第一条开始（重启不重播），桥接也只转发启动之后你说的话（重启不补发旧的）；启动时还没连上 DSH 的那几句会先排队，连上后补发。
@@ -33,8 +33,10 @@ pnpm install
 | `relayPerson` | 把你说的话转交给 DSH | `true` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
-| `voice` | Edge TTS 音色 ShortName（下拉可选，可手填） | `zh-CN-XiaoxiaoNeural` |
+| `preset` | 语音包预设（`custom` 才用下面几项） | `custom` |
+| `voice` | Edge TTS 音色 ShortName（下拉可选，可手填任意官方音色） | `zh-CN-XiaoxiaoNeural` |
 | `rate` / `volume` | 语速 / 音量的相对变化，如 `+15%` | `+0%` |
+| `pitch` | 音高的相对变化，如 `-2Hz` | `+0Hz` |
 | `readOptions` | 桌宠提问时把选项也读出来 | `true` |
 
 ## 开发

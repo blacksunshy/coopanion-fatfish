@@ -40,10 +40,16 @@ export interface FatfishText {
     voiceTitle: string;
     ttsEnabled: string;
     ttsEnabledHint: string;
+    preset: string;
+    presetHint: string;
+    /** The row that means "use the four settings below". */
+    presetCustom: string;
     voice: string;
     voiceHint: string;
     rate: string;
     rateHint: string;
+    pitch: string;
+    pitchHint: string;
     volume: string;
     volumeHint: string;
     readOptions: string;

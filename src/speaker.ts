@@ -19,6 +19,7 @@ export interface SpeakOptions {
   voice: string;
   rate: string;
   volume: string;
+  pitch: string;
 }
 
 /** After a failed synthesis the next attempts inside this window are skipped, so a rate limit or a dropped link does not spam the log. */
@@ -68,7 +69,7 @@ export class Speaker {
 
   /** One mp3 out of one line; the WebSocket is kept across lines and re-inited only when the voice settings change. */
   private async synthesise(text: string, opts: SpeakOptions, log: (line: string) => void): Promise<string | null> {
-    const key = [opts.voice, opts.rate, opts.volume].join('|');
+    const key = [opts.voice, opts.rate, opts.volume, opts.pitch].join('|');
     try {
       this.tts ??= new MsEdgeTTS({ enableLogger: false });
       if (key !== this.metadataKey) {
@@ -76,7 +77,11 @@ export class Speaker {
         this.metadataKey = key;
       }
       this.stage ??= await mkdtemp(join(tmpdir(), 'coopanion-tts-'));
-      const { audioFilePath } = await this.tts.toFile(this.stage, text, { rate: opts.rate, volume: opts.volume });
+      const { audioFilePath } = await this.tts.toFile(this.stage, text, {
+        rate: opts.rate,
+        volume: opts.volume,
+        pitch: opts.pitch,
+      });
       return audioFilePath;
     } catch (err) {
       this.failedAt = Date.now();

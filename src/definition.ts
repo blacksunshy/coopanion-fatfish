@@ -1,7 +1,17 @@
 /** The World definition: what the assembly layer mounts, and what Core constructs. */
 import type { Language } from 'cortico/core/language.ts';
 import type { WorldDefinition, WorldContext, WorldDescribe } from 'cortico/world.ts';
-import { FATFISH_DEFAULTS, FATFISH_ID, fatfishConfigGroups, VOICE_OPTIONS_KIND, voiceOptionRows, SEND_MAX, type FatfishConfigSection } from './config.ts';
+import {
+  FATFISH_DEFAULTS,
+  FATFISH_ID,
+  PRESET_OPTIONS_KIND,
+  SEND_MAX,
+  VOICE_OPTIONS_KIND,
+  fatfishConfigGroups,
+  presetOptionRows,
+  voiceOptionRows,
+  type FatfishConfigSection,
+} from './config.ts';
 import { fatfishText } from './i18n/index.ts';
 import { FatfishWorld } from './world.ts';
 
@@ -67,9 +77,13 @@ export function fatfishDefinition(assembly: FatfishAssembly = {}): WorldDefiniti
     },
     defaults: () => structuredClone(FATFISH_DEFAULTS),
     describe: DESCRIBE,
-    // the voice dropdown's rows come from here: the framework asks every mounted World for
-    // its `x-options` kind, so the pack serves its own list without any app-side wiring
-    configOptions: (kind: string) => (kind === VOICE_OPTIONS_KIND ? voiceOptionRows() : []),
+    // the voice and voice-pack dropdowns' rows come from here: the framework asks every mounted
+    // World for its `x-options` kind, so the pack serves its own lists without app-side wiring
+    configOptions: (kind: string, language: Language) => {
+      if (kind === VOICE_OPTIONS_KIND) return voiceOptionRows();
+      if (kind === PRESET_OPTIONS_KIND) return presetOptionRows(language);
+      return [];
+    },
     preflight: (ctx: WorldContext<FatfishConfigSection>) => {
       const t = fatfishText(assembly.language?.()).config;
       if (typeof ctx.cfg.voice !== 'string' || !ctx.cfg.voice.trim()) {

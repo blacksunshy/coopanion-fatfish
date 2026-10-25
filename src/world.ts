@@ -24,10 +24,17 @@ import type {
 import { fileURLToPath } from 'node:url';
 import { DshClient, PROTOCOL_VERSION, type HostFrame } from './client.ts';
 import { speakable } from './clean.ts';
-import { DEFAULT_URL, FATFISH_ID, RELAY_MAX, SEND_MAX, fatfishConfigGroups, type FatfishConfigSection } from './config.ts';
+import {
+  DEFAULT_URL,
+  FATFISH_ID,
+  RELAY_MAX,
+  SEND_MAX,
+  fatfishConfigGroups,
+  resolveSpeak,
+  type FatfishConfigSection,
+} from './config.ts';
 import { discoverBridge } from './discover.ts';
 import { fatfishText, type FatfishText } from './i18n/index.ts';
-import { DEFAULT_VOICE } from './voices.ts';
 import { Speaker, type SpeakOptions } from './speaker.ts';
 
 /** The event type a person's line carries; the pet World owns the type, this World only reads it. */
@@ -185,13 +192,7 @@ export class FatfishWorld implements World {
   }
 
   private get voice(): SpeakOptions {
-    const cfg = this.opts.cfg;
-    const str = (v: unknown, fallback: string): string => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
-    return {
-      voice: str(cfg.voice, DEFAULT_VOICE),
-      rate: str(cfg.rate, '+0%'),
-      volume: str(cfg.volume, '+0%'),
-    };
+    return resolveSpeak(this.opts.cfg);
   }
 
   async start(host: WorldHost): Promise<void> {
