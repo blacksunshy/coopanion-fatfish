@@ -7,6 +7,9 @@
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EventEnvelope } from 'cortico/core/types.ts';
@@ -41,7 +44,7 @@ async function withHost(after?: (socket: WebSocket, frame: Record<string, unknow
   await new Promise<void>((done) => http.listen(0, '127.0.0.1', () => done()));
   const { port } = http.address() as AddressInfo;
   const host = new FakeHost();
-  const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet`, ...cfg } as never });
+  const world = new FatfishWorld({ cfg: { url: `ws://127.0.0.1:${port}/coopanion/pet`, ...cfg } as never, discover: false });
   running.push({ world, http, wss });
   await world.start(host as never);
   await until(() => world.state().connected === true);
@@ -157,7 +160,7 @@ describe('the person\'s own lines', () => {
     await until(() => notices(host).some((text: string) => text.includes('不必再转一次')));
 
     await world.stop();
-    const restarted = new FatfishWorld({ cfg: { url: world.state().url as string } } as never);
+    const restarted = new FatfishWorld({ cfg: { url: world.state().url as string }, discover: false } as never);
     await restarted.start(host as never);
     await until(() => restarted.state().connected === true);
     // two full scan cycles: the restart starts at the newest event, so the old line
@@ -283,5 +286,70 @@ describe('when the bridge cannot connect', () => {
     expect((world as unknown as { pending: Array<unknown> }).pending).toHaveLength(0);
     expect(notices(host)).toHaveLength(0);
     await world.stop();
+  });
+});
+
+describe('the remembered Host port', () => {
+  /** A Host that greets a pet on a port of its own; only the greeting matters here. */
+  async function hostOnFreePort(): Promise<{ port: number; close: () => Promise<void> }> {
+    const wss = new WebSocketServer({ noServer: true });
+    const http = createServer();
+    http.on('upgrade', (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on('message', (data) => {
+          const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+          if (frame.t === 'hello') ws.send(JSON.stringify({ t: 'ready', v: 1, session: 'session-cached', cwd: '/w', model: 'deepseek-flash' }));
+        });
+      });
+    });
+    await new Promise<void>((done) => http.listen(0, '127.0.0.1', () => done()));
+    const { port } = http.address() as AddressInfo;
+    return {
+      port,
+      close: async () => {
+        wss.close();
+        await new Promise<void>((done) => http.close(() => done()));
+      },
+    };
+  }
+
+  it('is dialled before a configured URL that no longer answers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fatfish-cache-'));
+    const host = await hostOnFreePort();
+    try {
+      writeFileSync(join(dir, 'fatfish-bridge.json'), JSON.stringify({ lastGoodPort: host.port, seenAt: Date.now() }));
+      const world = new FatfishWorld({
+        cfg: { url: 'ws://127.0.0.1:1/coopanion/pet' },
+        stateDir: dir,
+        discover: false,
+      } as never);
+      await world.start(new FakeHost() as never);
+      await until(() => world.state().connected === true);
+      expect(world.state().url).toBe(`ws://127.0.0.1:${host.port}/coopanion/pet`);
+      await world.stop();
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is written once the Host answers, so the next start can skip the sweep', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fatfish-cache-'));
+    const host = await hostOnFreePort();
+    try {
+      const world = new FatfishWorld({
+        cfg: { url: `ws://127.0.0.1:${host.port}/coopanion/pet` },
+        stateDir: dir,
+        discover: false,
+      } as never);
+      await world.start(new FakeHost() as never);
+      await until(() => world.state().connected === true);
+      const cached = JSON.parse(readFileSync(join(dir, 'fatfish-bridge.json'), 'utf8')) as { lastGoodPort: number };
+      expect(cached.lastGoodPort).toBe(host.port);
+      await world.stop();
+    } finally {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

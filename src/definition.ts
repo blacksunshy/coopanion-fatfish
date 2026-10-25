@@ -113,6 +113,7 @@ export function fatfishDefinition(assembly: FatfishAssembly = {}): WorldDefiniti
       new FatfishWorld({
         cfg: ctx.cfg,
         language: () => assembly.language?.() ?? 'zh',
+        stateDir: ctx.dataDir,
       }),
   };
 }

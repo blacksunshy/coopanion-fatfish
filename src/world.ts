@@ -21,6 +21,8 @@ import type {
   WorldPanelDecl,
   WorldWebUiDecl,
 } from 'cortico/core/types.ts';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DshClient, PROTOCOL_VERSION, type HostFrame } from './client.ts';
 import { speakable } from './clean.ts';
@@ -51,8 +53,16 @@ const SCAN_MS = 1500;
 const PENDING_MAX = 16;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
-/** The quiet period between two port sweeps: a sweep costs ~2s, and retries come as often as 1s. */
+/** The quiet period after a successful sweep; a Host that stays put is not re-found on every retry. */
 const DISCOVER_COOLDOWN_MS = 20_000;
+/** The first gap after a sweep that found nothing; doubles up to the ceiling below. */
+const DISCOVER_RETRY_MS = 3_000;
+/** The longest gap between sweeps while no Host is up, so a late-starting DSH is still found. */
+const DISCOVER_MAX_MS = 30_000;
+/** The file in the data directory that remembers the port the Host last answered on. */
+const BRIDGE_CACHE = 'fatfish-bridge.json';
+/** A remembered port older than this is not worth dialling first. */
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 export interface FatfishWorldOptions {
   /** The live `worlds.fatfish` section. */
@@ -61,6 +71,12 @@ export interface FatfishWorldOptions {
   language?(): Language;
   /** The name this pet gives DSH. */
   name?(): string;
+  /**
+   * A directory this World may keep small state in across runs. The remembered Host port lives
+   * here, so a restart of the app can skip the sweep while DSH is still on the same port. Absent
+   * in tests and in hosts that hand out no directory: nothing is remembered then.
+   */
+  stateDir?: string;
   /**
    * Look for the Host on loopback when the address we hold stops answering. On by default: DSH picks
    * its port at launch, so a configured URL outlives it. A test that has to own the exact address
@@ -125,12 +141,18 @@ export class FatfishWorld implements World {
   private discoveredUrl: string | null = null;
   /** True while a sweep is in flight, so the reconnect loop cannot stack sweeps. */
   private discovering = false;
-  /** When the last sweep started; paces the loop below. */
-  private discoveredAt = 0;
+  /** Earliest moment the next sweep may start; a Host that was found waits longer than a missing one. */
+  private nextSweepAt = 0;
+  /** The gap that follows a sweep that found nothing; it doubles up to `DISCOVER_MAX_MS`. */
+  private sweepWait = DISCOVER_RETRY_MS;
+  /** Where the last good port is remembered; null when no directory was handed in. */
+  private readonly cachePath: string | null;
   /** False once stop() ran, so a sweep still in flight does not revive a World that is leaving. */
   private running = false;
 
-  constructor(private readonly opts: FatfishWorldOptions) {}
+  constructor(private readonly opts: FatfishWorldOptions) {
+    this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
+  }
 
   private get t(): FatfishText {
     return fatfishText(this.opts.language?.() ?? 'zh');
@@ -159,28 +181,33 @@ export class FatfishWorld implements World {
   }
 
   /**
-   * Looks for the Host on loopback when the address we hold stops answering.
+   * Looks for the Host on loopback when the address we hold stops answering, and once at startup.
    *
-   * DSH picks its web port at launch, so a configured URL outlives the port it names. The sweep is
-   * paid for only after a connection has already failed, and the cooldown keeps a DSH that simply
-   * is not running from costing one on every retry.
+   * DSH picks its web port at launch, so a configured URL outlives the port it names. A sweep that
+   * finds nothing waits a little and comes back with a longer gap, so a DSH that is still booting
+   * is caught within seconds instead of after a retry cycle; a sweep that found the Host waits
+   * longer. `force` ignores that pacing for the startup sweep, whose whole point is to answer
+   * before the first dial fails.
    */
-  private async rediscover(): Promise<void> {
+  private async rediscover(force = false): Promise<void> {
     const host = this.host;
     if (!this.running || !host || this.discovering) return;
     // The address discovery found is not answering either, or we would not be here: fall back to
     // the configured one for the retries in between, and let the sweep below look for where the
     // Host went. A discovered address is a hint about the past, not a replacement for the config.
     this.discoveredUrl = null;
-    const now = Date.now();
-    if (now - this.discoveredAt < DISCOVER_COOLDOWN_MS) return;
+    if (!force && Date.now() < this.nextSweepAt) return;
     this.discovering = true;
-    this.discoveredAt = now;
     try {
       const found = await discoverBridge({ version: PROTOCOL_VERSION, shouldStop: () => !this.running });
-      if (!found || !this.running) return;
+      if (!found || !this.running || this.connected) return;
+      this.rememberPort(found.port);
       const next = this.urlAtPort(found.port);
+      // The config already names the Host's port: the dial that just failed is not about a moved
+      // port, so leave the pacing to the retry path below.
       if (next === this.configuredUrl) return;
+      this.sweepWait = DISCOVER_RETRY_MS;
+      this.nextSweepAt = Date.now() + DISCOVER_COOLDOWN_MS;
       this.discoveredUrl = next;
       host.log.info(`DSH bridge moved to 127.0.0.1:${found.port}, reconnecting`);
       this.client?.retryNow();
@@ -188,6 +215,47 @@ export class FatfishWorld implements World {
       // A sweep that throws is a sweep that found nothing; the retry loop will come back to it.
     } finally {
       this.discovering = false;
+      if (!this.discoveredUrl && this.running && !this.connected) {
+        // Nothing to dial: come back sooner than a full retry cycle, but not so soon that a DSH
+        // nobody started keeps a sweep running half the time.
+        this.sweepWait = Math.min(this.sweepWait * 2, DISCOVER_MAX_MS);
+        this.nextSweepAt = Date.now() + this.sweepWait;
+      }
+    }
+  }
+
+  /** Remembers the port the Host answered on, so the next start can dial it before sweeping. */
+  private rememberPort(port: number): void {
+    if (!this.cachePath || !Number.isInteger(port) || port < 1) return;
+    try {
+      writeFileSync(this.cachePath, JSON.stringify({ lastGoodPort: port, seenAt: Date.now() }));
+    } catch {
+      // A missing or read-only directory only costs the next start one sweep.
+    }
+  }
+
+  /** The remembered port, when it is recent enough to be worth dialling first; 0 otherwise. */
+  private recalledPort(): number {
+    if (!this.cachePath) return 0;
+    try {
+      const raw = JSON.parse(readFileSync(this.cachePath, 'utf8')) as { lastGoodPort?: unknown; seenAt?: unknown };
+      const port = typeof raw.lastGoodPort === 'number' ? raw.lastGoodPort : 0;
+      const seenAt = typeof raw.seenAt === 'number' ? raw.seenAt : 0;
+      if (!Number.isInteger(port) || port < 1 || port > 65_535) return 0;
+      return Date.now() - seenAt > CACHE_MAX_AGE_MS ? 0 : port;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** The port a URL names; 0 when it names none or does not parse. */
+  private static portOf(url: string): number {
+    try {
+      const parsed = new URL(url);
+      if (parsed.port) return Number(parsed.port);
+      return parsed.protocol === 'wss:' ? 443 : 80;
+    } catch {
+      return 0;
     }
   }
 
@@ -204,6 +272,13 @@ export class FatfishWorld implements World {
     this.bridgeCursor = latest;
     host.log.info(`fatfish armed, voice=${this.voice.voice}, voiceCursor=${this.voiceCursor}, bridgeCursor=${this.bridgeCursor}`);
     if (this.opts.cfg.bridgeEnabled !== false) {
+      // DSH keeps the port it picked across a restart of this app, so the remembered one is dialled
+      // first; a stale one costs a single refused connection before the sweep takes over.
+      const recalled = this.recalledPort();
+      if (recalled) {
+        const hint = this.urlAtPort(recalled);
+        if (hint !== this.configuredUrl) this.discoveredUrl = hint;
+      }
       const client = new DshClient({
         url: () => this.url,
         name: () => this.opts.name?.() ?? 'Coopanion',
@@ -214,6 +289,7 @@ export class FatfishWorld implements World {
           this.model = session?.model ?? '';
           if (connected) {
             this.everConnected = true;
+            this.rememberPort(FatfishWorld.portOf(this.url));
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
           } else if (this.opts.discover !== false) {
@@ -227,6 +303,10 @@ export class FatfishWorld implements World {
       });
       this.client = client;
       client.start();
+      // The configured URL may already name a port DSH has left. Look while the first dial runs,
+      // rather than wait for it to fail and then for a sweep: that wait is what made a restarted
+      // DSH unreachable for the better part of a minute.
+      if (this.opts.discover !== false) void this.rediscover(true);
     }
     this.scanTimer = setInterval(() => void this.scan(), SCAN_MS);
     this.scanTimer.unref?.();

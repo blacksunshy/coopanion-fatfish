@@ -244,6 +244,15 @@ export class DshClient {
       if (this.socket !== socket) return;
       this.opts.log('info', `DSH bridge: ${err.message}`);
     });
+    socket.on('unexpected-response', (_req, res) => {
+      if (this.socket !== socket) return;
+      // The server answered the handshake and said no. A 503 means DSH's web server is up but the
+      // Host plugin did not take the upgrade; a 404 means nothing listens on this path. Either way
+      // this is not a dropped socket, and without the status the log reads as if it were.
+      this.opts.log('warn', `DSH bridge upgrade rejected: HTTP ${res.statusCode ?? 0}`);
+      res.resume();
+      socket.terminate();
+    });
   }
 
   private failed(detail: string): void {

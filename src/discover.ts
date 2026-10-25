@@ -10,8 +10,12 @@
  * Two phases keep that cheap. Closed ports are rejected by the OS in well under a millisecond, so
  * a parallel TCP sweep finds the handful of live ports without speaking HTTP to any of them; only
  * those candidates get the status request that says whether it is our bridge or something else.
- * The sweep is ~2s for the whole ephemeral range and runs only after a connection has already
- * failed — never on the happy path.
+ * The sweep is ~2s for the whole ephemeral range; the caller runs it after a connection has failed,
+ * and once at startup so a stale configured port does not cost a retry cycle first.
+ *
+ * The default concurrency is deliberately modest. A few hundred sockets in flight at once is
+ * enough to exhaust the ephemeral port range on some Windows setups, and a sweep that dies there
+ * finds nothing at all — the slow answer is the only one that still works.
  */
 import { connect } from 'node:net';
 
@@ -85,7 +89,7 @@ async function identify(port: number, version: number, timeoutMs: number): Promi
 export async function discoverBridge(opts: DiscoverOptions): Promise<BridgeStatus | null> {
   const from = opts.from ?? EPHEMERAL_FROM;
   const to = opts.to ?? EPHEMERAL_TO;
-  const concurrency = opts.concurrency ?? 512;
+  const concurrency = opts.concurrency ?? 64;
   const timeoutMs = opts.timeoutMs ?? 400;
   const stopped = opts.shouldStop ?? (() => false);
 
