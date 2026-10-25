@@ -33,7 +33,7 @@ export const en: FatfishText = {
     ttsEnabled: "Speak the pet's replies",
     ttsEnabledHint: 'Coo reads its bubble lines aloud; question choices are read too',
     preset: 'Voice pack',
-    presetHint: 'A ready-made voice, pace, pitch and loudness in one choice. Picking a pack overrides the four settings below; choose Custom to use your own',
+    presetHint: 'A ready-made voice, pace, pitch and loudness in one choice. Picking a pack overrides the four settings below; Custom keeps the settings you already have (an upgrade leaves them alone)',
     presetCustom: 'Custom',
     voice: 'Voice',
     voiceHint: 'The voice that reads aloud; ask Coo to set any Edge TTS ShortName the list lacks',

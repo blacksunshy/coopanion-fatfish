@@ -52,6 +52,7 @@ describe('voice packs', () => {
     expect(rows[0]).toEqual({ value: CUSTOM_PRESET, label: '自定义' });
     expect(rows.map((row) => row.value)).toContain(VOICE_PRESETS[0].id);
     expect(presetOptionRows('en')[0].label).toBe('Custom');
+    expect(presetOptionRows('en').find((row) => row.value === 'warm')?.label).toBe('Warm · Xiaoxiao');
   });
 
   it('gives the pack settings when one is chosen', () => {

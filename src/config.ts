@@ -37,7 +37,10 @@ export function voiceOptionRows(): Array<{ value: string; label: string }> {
 export function presetOptionRows(language?: Language): Array<{ value: string; label: string }> {
   return [
     { value: CUSTOM_PRESET, label: fatfishText(language).config.presetCustom },
-    ...VOICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+    ...VOICE_PRESETS.map((preset) => ({
+      value: preset.id,
+      label: language === 'en' ? preset.labelEn : preset.label,
+    })),
   ];
 }
 

@@ -42,6 +42,8 @@ export const DEFAULT_VOICE = 'zh-CN-XiaoxiaoNeural';
 export interface VoicePreset {
   id: string;
   label: string;
+  /** The label the English UI shows; `label` is Chinese. */
+  labelEn: string;
   voice: string;
   rate: string;
   volume: string;
@@ -52,15 +54,15 @@ export interface VoicePreset {
 export const CUSTOM_PRESET = 'custom';
 
 export const VOICE_PRESETS: VoicePreset[] = [
-  { id: 'warm', label: '温柔女声 · 晓晓', voice: 'zh-CN-XiaoxiaoNeural', rate: '-5%', volume: '+0%', pitch: '-2Hz' },
-  { id: 'lively', label: '活泼少女 · 晓伊', voice: 'zh-CN-XiaoyiNeural', rate: '+8%', volume: '+0%', pitch: '+2Hz' },
-  { id: 'boy', label: '少年音 · 云夏', voice: 'zh-CN-YunxiaNeural', rate: '+5%', volume: '+0%', pitch: '+0Hz' },
-  { id: 'broadcast', label: '播音腔 · 云扬', voice: 'zh-CN-YunyangNeural', rate: '-5%', volume: '+10%', pitch: '-2Hz' },
-  { id: 'northeast', label: '东北口音 · 晓北', voice: 'zh-CN-liaoning-XiaobeiNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
-  { id: 'shaanxi', label: '陕西口音 · 晓妮', voice: 'zh-CN-shaanxi-XiaoniNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
-  { id: 'cantonese', label: '粤语女声 · 曉曼', voice: 'zh-HK-HiuMaanNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
-  { id: 'taiwan', label: '台湾女声 · 曉臻', voice: 'zh-TW-HsiaoChenNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
-  { id: 'english', label: 'English · Aria', voice: 'en-US-AriaNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'warm', label: '温柔女声 · 晓晓', labelEn: 'Warm · Xiaoxiao', voice: 'zh-CN-XiaoxiaoNeural', rate: '-5%', volume: '+0%', pitch: '-2Hz' },
+  { id: 'lively', label: '活泼少女 · 晓伊', labelEn: 'Lively · Xiaoyi', voice: 'zh-CN-XiaoyiNeural', rate: '+8%', volume: '+0%', pitch: '+2Hz' },
+  { id: 'boy', label: '少年音 · 云夏', labelEn: 'Boy · Yunxia', voice: 'zh-CN-YunxiaNeural', rate: '+5%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'broadcast', label: '播音腔 · 云扬', labelEn: 'Broadcast · Yunyang', voice: 'zh-CN-YunyangNeural', rate: '-5%', volume: '+10%', pitch: '-2Hz' },
+  { id: 'northeast', label: '东北口音 · 晓北', labelEn: 'Northeast · Xiaobei', voice: 'zh-CN-liaoning-XiaobeiNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'shaanxi', label: '陕西口音 · 晓妮', labelEn: 'Shaanxi · Xiaoni', voice: 'zh-CN-shaanxi-XiaoniNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'cantonese', label: '粤语女声 · 曉曼', labelEn: 'Cantonese · HiuMaan', voice: 'zh-HK-HiuMaanNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'taiwan', label: '台湾女声 · 曉臻', labelEn: 'Taiwan · HsiaoChen', voice: 'zh-TW-HsiaoChenNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
+  { id: 'english', label: 'English · Aria', labelEn: 'English · Aria', voice: 'en-US-AriaNeural', rate: '+0%', volume: '+0%', pitch: '+0Hz' },
 ];
 
 /** The rate values the config offers; Edge TTS takes relative percentages. */

@@ -24,6 +24,10 @@ export interface SpeakOptions {
 
 /** After a failed synthesis the next attempts inside this window are skipped, so a rate limit or a dropped link does not spam the log. */
 const COOLDOWN_MS = 10_000;
+/** How many times one line is tried: a dropped link is worth one fresh connection before the line is skipped. */
+const ATTEMPTS = 2;
+/** The pause before that retry, long enough for a half-open socket to be gone. */
+const RETRY_DELAY_MS = 400;
 
 export class Speaker {
   private tts: MsEdgeTTS | null = null;
@@ -59,35 +63,50 @@ export class Speaker {
 
   async stop(): Promise<void> {
     this.hush();
-    this.tts?.close();
-    this.tts = null;
+    this.release();
     if (this.stage) {
       await rm(this.stage, { recursive: true, force: true }).catch(() => {});
       this.stage = null;
     }
   }
 
+  /** Drops the TTS client; the next line dials a fresh socket instead of reusing a broken one. */
+  private release(): void {
+    this.tts?.close();
+    this.tts = null;
+    this.metadataKey = '';
+  }
+
   /** One mp3 out of one line; the WebSocket is kept across lines and re-inited only when the voice settings change. */
   private async synthesise(text: string, opts: SpeakOptions, log: (line: string) => void): Promise<string | null> {
     const key = [opts.voice, opts.rate, opts.volume, opts.pitch].join('|');
-    try {
-      this.tts ??= new MsEdgeTTS({ enableLogger: false });
-      if (key !== this.metadataKey) {
-        await this.tts.setMetadata(opts.voice, MP3);
-        this.metadataKey = key;
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      try {
+        this.tts ??= new MsEdgeTTS({ enableLogger: false });
+        if (key !== this.metadataKey) {
+          await this.tts.setMetadata(opts.voice, MP3);
+          this.metadataKey = key;
+        }
+        this.stage ??= await mkdtemp(join(tmpdir(), 'coopanion-tts-'));
+        const { audioFilePath } = await this.tts.toFile(this.stage, text, {
+          rate: opts.rate,
+          volume: opts.volume,
+          pitch: opts.pitch,
+        });
+        return audioFilePath;
+      } catch (err) {
+        // A connection that timed out or dropped is not reused: the retry gets a new socket, so a
+        // lost first connection costs one more try instead of silence until the World restarts.
+        this.release();
+        if (attempt === ATTEMPTS) {
+          this.failedAt = Date.now();
+          log(`TTS synthesis failed: ${(err as Error).message}`);
+          return null;
+        }
+        await new Promise((done) => setTimeout(done, RETRY_DELAY_MS));
       }
-      this.stage ??= await mkdtemp(join(tmpdir(), 'coopanion-tts-'));
-      const { audioFilePath } = await this.tts.toFile(this.stage, text, {
-        rate: opts.rate,
-        volume: opts.volume,
-        pitch: opts.pitch,
-      });
-      return audioFilePath;
-    } catch (err) {
-      this.failedAt = Date.now();
-      log(`TTS synthesis failed: ${(err as Error).message}`);
-      return null;
     }
+    return null;
   }
 
   /** Plays one clip; the player child's exit is the end of the speech, and killing it is the interruption. */

@@ -33,7 +33,7 @@ export const zh: FatfishText = {
     ttsEnabled: '朗读桌宠的话',
     ttsEnabledHint: 'Coo 在气泡里说话的同时读出声来；提问的选项一并读出',
     preset: '语音包',
-    presetHint: '一套现成的音色、语速、音高与音量组合。选一个语音包会覆盖下面几项；选「自定义」才用你自己调的',
+    presetHint: '一套现成的音色、语速、音高与音量组合。选一个语音包会覆盖下面几项；选「自定义」就沿用你现在调好的设置（升级不会改动它）',
     presetCustom: '自定义',
     voice: '音色',
     voiceHint: '选一个说话的声音；列表里没有的 Edge TTS 音色名也可以让 Coo 帮你填',

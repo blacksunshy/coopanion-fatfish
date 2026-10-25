@@ -45,6 +45,22 @@ const DESCRIBE: WorldDescribe = {
       summary: { zh: '把一句话转交给桥接的 DSH（DeepSeek Harness）会话。', en: 'Hand one line over to the bridged DSH conversation.' },
     },
     {
+      name: 'dsh_pick_session',
+      description:
+        'Point this pet at a different DeepSeek Harness session, by its id. ' +
+        'By default the pet follows the newest open conversation; use this when the person wants your words to go into an older one ' +
+        '(for example after archiving the current session). It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.',
+      tags: ['speak'],
+      parameters: {
+        type: 'object',
+        properties: {
+          session: { type: 'string', maxLength: 128, description: 'The id of the DSH session to speak into.' },
+        },
+        required: ['session'],
+      },
+      summary: { zh: '把桌宠说话的对象切到另一个 DSH 会话（按 id）。', en: 'Switch the DSH session the pet speaks into, by id.' },
+    },
+    {
       name: 'tts_hush',
       description:
         'Stop the voice that reads your replies aloud, right now. ' +
