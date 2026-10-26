@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.4
+
+- 补上 `package.json` 里缺失的 `homepage` 与 `bugs` 字段：Co 扩展市场卡片现在能显示「项目主页」和「问题反馈」两个链接（此前只有 fatfish 没有，其它扩展都有）
+- 扩写市场里的简介文案，中英双语：说明这是「DSH 对话 + 语音朗读」的复合包，以及桥接这半边需要先装 DSH Host 插件（`coopanion-connector-dsh`）
+- 补 `keywords`，方便在扩展市场里被搜到（tts / voice / edge-tts / dsh / bridge / desktop-pet）
+
 ## 0.6.3
 
 - 新增 DSH 桥接面板：「固定到当前会话 / 解除固定 / 刷新测试」三颗按钮，详情见 README 的「桥接面板」段
