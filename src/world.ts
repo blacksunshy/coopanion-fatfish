@@ -149,6 +149,8 @@ export class FatfishWorld implements World {
   private readonly cachePath: string | null;
   /** False once stop() ran, so a sweep still in flight does not revive a World that is leaving. */
   private running = false;
+  /** When set, the pet refuses to follow the default owner and stays on this session. */
+  private pinnedSession: string | null = null;
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -292,6 +294,18 @@ export class FatfishWorld implements World {
             this.rememberPort(FatfishWorld.portOf(this.url));
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
+            // A pinned session may no longer be the Host's default owner after a reconnect or
+            // pick-free switch; re-pick to stay on target. The first ready that comes while
+            // `start()` is still running sees this too, but the client is only re-hung, so
+            // pick fires after the bridge is fully up.
+            if (this.pinnedSession && session?.session && this.pinnedSession !== session.session) {
+              void this.client?.pick(this.pinnedSession).then((refusal) => {
+                if (refusal) {
+                  host.log.warn(`DSH bridge pinned session gone: ${refusal}`);
+                  this.pinnedSession = null;
+                }
+              });
+            }
           } else if (this.opts.discover !== false) {
             void this.rediscover();
           }
@@ -643,9 +657,24 @@ export class FatfishWorld implements World {
           ],
         },
       ],
-      invoke: async (panel, method) => {
-        if (panel !== 'dsh' || method !== 'state') throw new Error(`unknown ${panel}.${method}`);
-        return this.state();
+      invoke: async (panel, method, args) => {
+        if (panel !== 'dsh') throw new Error(`unknown panel ${panel}`);
+        if (method === 'state') return this.state();
+        if (method === 'bind') {
+          const session = typeof args?.[0] === 'string' ? args[0].trim() : '';
+          if (!session) throw new Error('no session id');
+          if (!this.client || !this.connected) throw new Error('DSH bridge not connected');
+          const refusal = await this.client.pick(session);
+          if (refusal) throw new Error(refusal);
+          this.pinnedSession = session;
+          this.session = session;
+          return { ok: true, session };
+        }
+        if (method === 'unbind') {
+          this.pinnedSession = null;
+          return { ok: true };
+        }
+        throw new Error(`unknown ${panel}.${method}`);
       },
     };
   }
@@ -658,6 +687,7 @@ export class FatfishWorld implements World {
       session: this.session,
       model: this.model,
       protocol: PROTOCOL_VERSION,
+      pinned: this.pinnedSession,
     };
   }
 }

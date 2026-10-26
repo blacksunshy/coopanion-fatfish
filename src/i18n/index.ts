@@ -24,6 +24,24 @@ export interface FatfishText {
     session: string;
     model: string;
     protocol: string;
+    /** "Bind current" button label. */
+    bind: string;
+    /** "Unbind" button label. */
+    unbind: string;
+    /** Chip label shown when pinned to a fixed session. */
+    pinned: string;
+    /** Row label shown when DSH default owner differs from the pinned one. */
+    following: string;
+    /** Bind button disabled because bridge is not connected. */
+    notConnected: string;
+    /** Bind succeeded, argument is session id. */
+    bound: (session: string) => string;
+    /** Bind failed prefix (error reason appended). */
+    bindFailed: string;
+    /** Unbind succeeded. */
+    unbound: string;
+    /** Unbind failed prefix. */
+    unbindFailed: string;
   };
   config: {
     // the bridge group
