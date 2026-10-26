@@ -39,6 +39,16 @@ pnpm install
 | `pitch` | 音高的相对变化，如 `-2Hz` | `+0Hz` |
 | `readOptions` | 桌宠提问时把选项也读出来 | `true` |
 
+## 桥接面板
+
+Coopanion WebUI → Fatfish 面板显示桥接状态：地址、当前会话、模型、协议版本，并有三颗按钮：
+
+- **固定到当前会话**：把桌宠锁在 DSH 当前这个会话里。之后 DSH 默认 owner 切到别的会话时，桌宠会自动 `pick` 回来，不跟着跑。
+- **解除固定**：恢复默认跟随 DSH 最新会话的行为。
+- **刷新测试**：强制读一次 bridge 状态，显示当前 session id / model，若与上次不同会标注"会话 ID 已更新"等。
+
+> ⚠️ **CLI 模式（`dsh web --no-open`）不建议用固定会话**：CLI 模式的会话不持久化，重启 `dsh web` 后所有会话都会丢，固定的 session id 也就失效了。固定会话功能**仅在 DSH 桌面版（Electron）里可靠**，桌面版会话跨重启保留。
+
 ## 开发
 
 ```bash

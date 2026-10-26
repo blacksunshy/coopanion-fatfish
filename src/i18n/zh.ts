@@ -18,15 +18,24 @@ export const zh: FatfishText = {
     session: '会话',
     model: '模型',
     protocol: '协议版本',
-    bind: '绑定当前会话',
-    unbind: '解除绑定',
+    bind: '固定到当前会话',
+    unbind: '解除固定',
+    testRefresh: '刷新测试',
     pinned: '已固定',
     following: 'DSH 默认会话',
-    notConnected: '桥接未连接，无法绑定',
+    notConnected: '桥接未连接，无法固定',
     bound: (session) => `已固定到会话 ${session}。之后桌宠不会跟着 DSH 切换默认会话。`,
-    bindFailed: '绑定失败：',
+    bindFailed: '固定失败：',
     unbound: '已解除固定，桌宠重新跟随 DSH 默认会话。',
     unbindFailed: '解除失败：',
+    testResult: (session, model, sessionChanged, modelChanged) => {
+      const flags: string[] = [];
+      if (sessionChanged) flags.push('会话 ID 已更新');
+      if (modelChanged) flags.push('模型已更新');
+      const flagTxt = flags.length ? `（${flags.join('、')}）` : '';
+      return `当前会话：${session}，模型：${model}${flagTxt}`;
+    },
+    testFailed: '测试刷新失败：桥接不可达',
   },
   config: {
     bridgeTitle: 'DSH 桥接',

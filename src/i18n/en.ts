@@ -18,15 +18,24 @@ export const en: FatfishText = {
     session: 'Session',
     model: 'Model',
     protocol: 'Protocol',
-    bind: 'Bind current',
-    unbind: 'Unbind',
+    bind: 'Pin to current session',
+    unbind: 'Unpin',
+    testRefresh: 'Refresh test',
     pinned: 'Pinned',
     following: 'DSH default',
-    notConnected: 'Bridge is not connected; cannot bind',
+    notConnected: 'Bridge is not connected; cannot pin',
     bound: (session) => `Pinned to session ${session}. The pet will stay on it even if DSH moves the default owner.`,
-    bindFailed: 'Bind failed: ',
+    bindFailed: 'Pin failed: ',
     unbound: 'Unpinned; the pet follows DSH default again.',
-    unbindFailed: 'Unbind failed: ',
+    unbindFailed: 'Unpin failed: ',
+    testResult: (session, model, sessionChanged, modelChanged) => {
+      const flags: string[] = [];
+      if (sessionChanged) flags.push('session id updated');
+      if (modelChanged) flags.push('model updated');
+      const flagTxt = flags.length ? ` (${flags.join(', ')})` : '';
+      return `Session: ${session}, model: ${model}${flagTxt}`;
+    },
+    testFailed: 'Refresh test failed: bridge unreachable',
   },
   config: {
     bridgeTitle: 'DSH bridge',

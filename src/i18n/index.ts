@@ -24,10 +24,12 @@ export interface FatfishText {
     session: string;
     model: string;
     protocol: string;
-    /** "Bind current" button label. */
+    /** "Pin to current session" button label. */
     bind: string;
-    /** "Unbind" button label. */
+    /** "Unpin" button label. */
     unbind: string;
+    /** "Refresh test" button label — force-read bridge state to verify session/model refreshed. */
+    testRefresh: string;
     /** Chip label shown when pinned to a fixed session. */
     pinned: string;
     /** Row label shown when DSH default owner differs from the pinned one. */
@@ -42,6 +44,10 @@ export interface FatfishText {
     unbound: string;
     /** Unbind failed prefix. */
     unbindFailed: string;
+    /** Test refresh succeeded — shows current session/model, optionally with diff flags. */
+    testResult: (session: string, model: string, sessionChanged?: boolean, modelChanged?: boolean) => string;
+    /** Test refresh failed (bridge not reachable). */
+    testFailed: string;
   };
   config: {
     // the bridge group

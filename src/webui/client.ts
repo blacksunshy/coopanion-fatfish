@@ -2,7 +2,8 @@
  * The WebUI panel for the bridge: the Host half's address, the conversation its notices belong
  * to, and the protocol revision both halves speak. A pair of buttons lets the person pin the
  * pet to the current session so it keeps speaking into it even after DSH moves the default
- * owner elsewhere.
+ * owner elsewhere, plus a test button to force-read the bridge state and confirm the session
+ * id has refreshed after an auto-repick.
  */
 import type { WebUiClientBundle, WebUiPanel, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { fatfishText } from '../i18n/index.ts';
@@ -33,23 +34,31 @@ const bridgePanel: WebUiPanel = {
     sheet.body.append(status, facts, actions, msg);
     ctx.root.appendChild(sheet.el);
 
-    // These come from the runtime WebUi client; the local type shell only names a subset, so
-    // cast is needed on each call.
+    // Runtime WebUi only types a subset of its own factory; cast is needed.
     const asUi = ui as unknown as {
       button(label: string, opts?: { size?: string; variant?: string; onClick?: () => void }): HTMLElement;
-      refresh(): void;
     };
 
     const bindBtn = asUi.button(t.panel.bind, { size: 'sm', variant: 'primary' });
     const unbindBtn = asUi.button(t.panel.unbind, { size: 'sm' });
+    const testBtn = asUi.button(t.panel.testRefresh, { size: 'sm' });
+
+    /** True while bind/unbind is in flight so a poll racing the invoke does not clobber the UI. */
+    let pending = false;
+    /** The last state we rendered, used by the test button to diff-before/after. */
+    let last: BridgeState | null = null;
 
     const show = (bridge: BridgeState): void => {
-      const chips: HTMLElement[] = [
+      last = bridge;
+      // --- chips ---
+      while (status.firstChild) status.removeChild(status.firstChild);
+      status.append(
         ui.chip(bridge.connected ? t.lamps.connected : t.lamps.offline, bridge.connected ? 'accent' : 'warn'),
         ui.chip(`${t.panel.protocol} v${bridge.protocol}`),
-      ];
-      if (bridge.pinned) chips.push(ui.chip(t.panel.pinned, 'accent'));
-      for (const chip of chips) status.appendChild(chip);
+        ...(bridge.pinned ? [ui.chip(t.panel.pinned, 'accent')] : []),
+      );
+      // --- kv rows ---
+      while (facts.firstChild) facts.removeChild(facts.firstChild);
       const candidates: Array<{ k: string; v: string } | null> = [
         { k: t.panel.url, v: bridge.url || '—' },
         bridge.pinned
@@ -63,55 +72,86 @@ const bridgePanel: WebUiPanel = {
         { k: t.panel.model, v: bridge.model || '—' },
       ];
       const rows = candidates.filter((r): r is { k: string; v: string } => r !== null);
-      const kv = ui.kv(rows);
-      facts.appendChild(kv);
-      bindBtn.setAttribute('disabled', (!bridge.connected || !bridge.session || bridge.pinned === bridge.session) ? '' : '');
-      unbindBtn.setAttribute('disabled', bridge.pinned ? '' : '');
-      actions.append(bindBtn, unbindBtn);
+      facts.append(ui.kv(rows));
+      // --- buttons ---
+      if (!pending) {
+        bindBtn.toggleAttribute('disabled', !bridge.connected || !bridge.session || bridge.pinned === bridge.session);
+        unbindBtn.toggleAttribute('disabled', !bridge.pinned);
+      }
+      testBtn.toggleAttribute('disabled', !bridge.connected);
+      while (actions.firstChild) actions.removeChild(actions.firstChild);
+      actions.append(bindBtn, unbindBtn, testBtn);
     };
 
-    const clearAll = (...els: HTMLElement[]): void => {
-      for (const el of els) while (el.firstChild) el.removeChild(el.firstChild);
-    };
-
-    const refresh = async (): Promise<void> => {
+    const refresh = async (): Promise<BridgeState | null> => {
       try {
-        clearAll(status, facts, actions);
-        show(await ctx.invoke<BridgeState>('state'));
+        const state = await ctx.invoke<BridgeState>('state');
+        show(state);
+        return state;
       } catch {
-        // a failing invoke is drawn by the WebUI as this panel's error card
+        return null;
       }
     };
 
     const bindCurrent = async (): Promise<void> => {
+      pending = true;
+      msg.textContent = '';
       try {
-        msg.textContent = '';
         const state = await ctx.invoke<BridgeState>('state');
         if (!state.connected || !state.session) {
           msg.textContent = t.panel.notConnected;
           return;
         }
-        await ctx.invoke<{ ok: boolean; session: string }>('bind', [state.session]);
-        msg.textContent = t.panel.bound(state.session);
-        await refresh();
+        const result = await ctx.invoke<{ ok: boolean; session: string }>('bind', [state.session]);
+        msg.textContent = t.panel.bound(result.session);
       } catch (err: unknown) {
         msg.textContent = t.panel.bindFailed + (err instanceof Error ? err.message : String(err));
+      } finally {
+        pending = false;
+        await refresh();
       }
     };
 
     const unbind = async (): Promise<void> => {
+      pending = true;
+      msg.textContent = '';
       try {
-        msg.textContent = '';
         await ctx.invoke<{ ok: boolean }>('unbind');
         msg.textContent = t.panel.unbound;
-        await refresh();
       } catch (err: unknown) {
         msg.textContent = t.panel.unbindFailed + (err instanceof Error ? err.message : String(err));
+      } finally {
+        pending = false;
+        await refresh();
       }
+    };
+
+    /** 点一下强制读一次 bridge 状态，显示 session id / model 是否变了（用于验证 auto re-pick 生效）。 */
+    const testRefresh = async (): Promise<void> => {
+      msg.textContent = '';
+      const before = last;
+      const after = await refresh();
+      if (!after) {
+        msg.textContent = t.panel.testFailed;
+        return;
+      }
+      if (!before) {
+        msg.textContent = t.panel.testResult(after.session, after.model);
+        return;
+      }
+      const sessionChanged = before.session !== after.session;
+      const modelChanged = before.model !== after.model;
+      msg.textContent = t.panel.testResult(
+        after.session || '—',
+        after.model || '—',
+        sessionChanged,
+        modelChanged,
+      );
     };
 
     bindBtn.addEventListener('click', () => void bindCurrent());
     unbindBtn.addEventListener('click', () => void unbind());
+    testBtn.addEventListener('click', () => void testRefresh());
 
     await refresh();
     ctx.interval(() => void refresh(), POLL_MS);
