@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.5
+
+- 补上 DSH 侧的版本要求：**「固定到当前会话」与 `dsh_pick_session` 需要 Host 侧插件 `coopanion-connector-dsh` ≥ 0.2.4**
+- 该 Host 插件**只在 GitHub 分发**（`https://github.com/blacksunshy/coopanion-connector-dsh`），**没有发布到 npm**——DSH 插件市场里来源要填仓库地址，不要填 npm 包名；两边版本要配对，桌宠侧用本版（0.6.5）
+- 补回 0.6.4 的说明：0.6.4 的 npm 包内 CHANGELOG.md 漏了 0.6.4 段，所以市场详情页当时读不到，这次随 0.6.5 一并带上
+
 ## 0.6.4
 
 - 补上 `package.json` 里缺失的 `homepage` 与 `bugs` 字段：Co 扩展市场卡片现在能显示「项目主页」和「问题反馈」两个链接（此前只有 fatfish 没有，其它扩展都有）
