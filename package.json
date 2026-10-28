@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "type": "module",
   "description": "DSH 对话 语音朗读（Win/macOS）。需 coopanion-connector-dsh（GitHub only, ≥0.2.4）。默认关转发；DSH 升 v0.2.9 修 CSWSH。/ Chat w/ DSH, voices (Win/macOS). Needs DSH host (GitHub only). relayPerson & relayPet off. UPGRADE to v0.2.9.",
   "author": "blacksunshy",

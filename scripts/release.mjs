@@ -53,7 +53,7 @@ function fail(msg) {
 }
 
 // ---------- 阶段 0: 发布前断言 ----------
-function preflight() {
+async function preflight() {
   console.log('── 阶段 0: 发布前断言');
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
@@ -68,7 +68,13 @@ function preflight() {
   console.log(`  CHANGELOG 首段: ${firstH2}`);
   if (!firstH2.startsWith(version)) fail(`CHANGELOG.md 顶部不是 ## ${version}，先写更新说明`);
 
-  // 版本号没发过重
+  // 版本号没在 npm registry 上发过
+  console.log(`  检查 ${PKG}@${version} 是否已在 npm 上`);
+  try {
+    const r = await fetch(`${REGISTRY}/${PKG}/${version}`);
+    if (r.ok) fail(`${PKG}@${version} 已在 npm registry 上，换个版本号`);
+  } catch { /* fetch 失败 = 不存在，OK */ }
+
   return pkg;
 }
 
@@ -209,7 +215,7 @@ if (verifyOnly) {
   }
   if (!notesZh || !notesEn) fail('notes 不能为空');
 
-  preflight();
+  await preflight();
   bumpAndTest();
   await publishAndWait();
   await pushGithub(notesZh, notesEn);
