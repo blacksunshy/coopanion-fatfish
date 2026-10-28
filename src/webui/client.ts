@@ -2,8 +2,9 @@
  * The WebUI panel for the bridge: the Host half's address, the conversation its notices belong
  * to, and the protocol revision both halves speak. A pair of buttons lets the person pin the
  * pet to the current session so it keeps speaking into it even after DSH moves the default
- * owner elsewhere, plus a test button to force-read the bridge state and confirm the session
- * id has refreshed after an auto-repick.
+ * owner elsewhere, a button that starts a new DSH conversation when none is open, plus a test
+ * button to force-read the bridge state and confirm the session id has refreshed after an
+ * auto-repick.
  */
 import type { WebUiClientBundle, WebUiPanel, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import type { SessionList } from '../client.ts';
@@ -41,7 +42,8 @@ const bridgePanel: WebUiPanel = {
       button(label: string, opts?: { size?: string; variant?: string; onClick?: () => void }): HTMLElement;
     };
 
-    const bindBtn = asUi.button(t.panel.bind, { size: 'sm', variant: 'primary' });
+    const newBtn = asUi.button(t.panel.newSession, { size: 'sm', variant: 'primary' });
+    const bindBtn = asUi.button(t.panel.bind, { size: 'sm' });
     const unbindBtn = asUi.button(t.panel.unbind, { size: 'sm' });
     const testBtn = asUi.button(t.panel.testRefresh, { size: 'sm' });
     const pickBtn = asUi.button(t.panel.pickSession, { size: 'sm' });
@@ -85,10 +87,11 @@ const bridgePanel: WebUiPanel = {
         bindBtn.toggleAttribute('disabled', !bridge.connected || !bridge.session || bridge.pinned === bridge.session);
         unbindBtn.toggleAttribute('disabled', !bridge.pinned);
       }
+      newBtn.toggleAttribute('disabled', !bridge.connected);
       testBtn.toggleAttribute('disabled', !bridge.connected);
       pickBtn.toggleAttribute('disabled', !bridge.connected);
       while (actions.firstChild) actions.removeChild(actions.firstChild);
-      actions.append(bindBtn, unbindBtn, testBtn, pickBtn);
+      actions.append(newBtn, bindBtn, unbindBtn, testBtn, pickBtn);
       // Re-mark the open picker: after a bind/unbind the rows still say "current" / "pinned"
       // for the old session, which reads as "nothing refreshed".
       renderRows();
@@ -140,6 +143,21 @@ const bridgePanel: WebUiPanel = {
         await refresh();
         // The pin moved in the Host too; an open picker would keep showing the old mark.
         if (pickerOpen) await reloadRows();
+      }
+    };
+
+    const startSession = async (): Promise<void> => {
+      pending = true;
+      msg.textContent = '';
+      try {
+        const result = await ctx.invoke<{ ok: boolean; session: string }>('new');
+        msg.textContent = t.panel.created(result.session);
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        msg.textContent = reason === 'unsent' ? t.panel.notConnected : t.panel.createFailed + reason;
+      } finally {
+        pending = false;
+        await refresh();
       }
     };
 
@@ -254,6 +272,7 @@ const bridgePanel: WebUiPanel = {
       await reloadRows();
     };
 
+    newBtn.addEventListener('click', () => void startSession());
     bindBtn.addEventListener('click', () => void bindCurrent());
     unbindBtn.addEventListener('click', () => void unbind());
     testBtn.addEventListener('click', () => void testRefresh());

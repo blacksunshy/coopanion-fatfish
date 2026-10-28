@@ -36,6 +36,9 @@ export const zh: FatfishText = {
       return `当前会话：${session}，模型：${model}${flagTxt}`;
     },
     testFailed: '测试刷新失败：桥接不可达',
+    newSession: '新建会话',
+    created: (session) => `已在 DSH 新建会话 ${session}，桌宠已接上。`,
+    createFailed: '新建会话失败：',
     pickSession: '选择会话',
     pickHide: '收起列表',
     noSessions: 'DSH 没有打开的会话',
@@ -80,5 +83,7 @@ export const zh: FatfishText = {
     sendFailed: '没有交给 DSH：{reason}',
     statusConnected: '已连接（会话 {session}，模型 {model}）',
     statusOffline: '未连接',
+    newSessionDone: '已在 DSH 新建会话 {session}，之后的话都会送到那里。',
+    newSessionFailed: '没能新建会话：{reason}',
   },
 };

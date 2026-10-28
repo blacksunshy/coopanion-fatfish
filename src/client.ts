@@ -36,7 +36,9 @@ export type HostFrame =
       pinned: boolean;
     }
   /** Answer to `unpin`: the Host dropped the pin, auto-follow takes over again. */
-  | { t: 'unpinned' };
+  | { t: 'unpinned' }
+  /** Answer to a `new` request: the Host created this conversation and owns it now. */
+  | { t: 'created'; id: string; session: string };
 
 export interface DshClientOptions {
   /** Read at each attempt, so a corrected address is used by the next reconnect. */
@@ -63,6 +65,9 @@ export interface SessionList {
   pinned: boolean;
 }
 
+/** What a `new` request settled to: the conversation the Host made, or why it made none. */
+export type NewSessionOutcome = { ok: true; session: string } | { ok: false; reason: string };
+
 /** Backoff for the first attempts; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000] as const;
 
@@ -81,6 +86,8 @@ export class DshClient {
     | null = null;
   /** The one `unpin` frame waiting for the Host's answer, if any. */
   private waitingUnpin: { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout } | null = null;
+  /** `new` frames waiting for the Host's answer, by request id. */
+  private readonly waitingNew = new Map<string, { resolve: (outcome: NewSessionOutcome) => void; timer: NodeJS.Timeout }>();
   private seq = 0;
 
   constructor(private readonly opts: DshClientOptions) {}
@@ -121,6 +128,11 @@ export class DshClient {
       this.waitingUnpin.resolve('the bridge stopped before DSH answered');
       this.waitingUnpin = null;
     }
+    for (const [, entry] of this.waitingNew) {
+      clearTimeout(entry.timer);
+      entry.resolve({ ok: false, reason: 'the bridge stopped before DSH answered' });
+    }
+    this.waitingNew.clear();
     const socket = this.socket;
     this.socket = null;
     if (socket) {
@@ -264,6 +276,34 @@ export class DshClient {
     });
   }
 
+  /**
+   * Start a new DSH conversation and point this pet at it. The Host makes one when the person
+   * archived every session, so the pet is not left with nowhere to speak; the answer carries the
+   * session id, and the `ready` frame that follows does the binding.
+   *
+   * Resolves `{ ok: false, reason: 'unsent' }` when the bridge is down, so the caller can say the
+   * request never left instead of reporting a failure that may not have happened.
+   */
+  newSession(): Promise<NewSessionOutcome> {
+    if (!this.connected) return Promise.resolve({ ok: false, reason: 'unsent' });
+    const id = `n${++this.seq}`;
+    return new Promise<NewSessionOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.waitingNew.delete(id);
+        resolve({ ok: false, reason: 'DSH did not answer in time' });
+      }, 20_000);
+      timer.unref?.();
+      this.waitingNew.set(id, { resolve, timer });
+      try {
+        this.socket!.send(JSON.stringify({ t: 'new', id }));
+      } catch {
+        clearTimeout(timer);
+        this.waitingNew.delete(id);
+        resolve({ ok: false, reason: 'unsent' });
+      }
+    });
+  }
+
   private connect(): void {
     if (this.stopped) return;
     let socket: WebSocket;
@@ -309,10 +349,19 @@ export class DshClient {
           }
           return;
         }
-        const entry = this.waiting.get((frame as { id: string }).id);
+        const answerId = (frame as { id: string }).id;
+        // A refused `new` carries the request id too; check before treating it as a `say` answer.
+        const created = this.waitingNew.get(answerId);
+        if (created) {
+          clearTimeout(created.timer);
+          this.waitingNew.delete(answerId);
+          created.resolve({ ok: false, reason: (frame as { reason?: string }).reason ?? 'DSH refused to create a conversation' });
+          return;
+        }
+        const entry = this.waiting.get(answerId);
         if (!entry) return;
         clearTimeout(entry.timer);
-        this.waiting.delete((frame as { id: string }).id);
+        this.waiting.delete(answerId);
         entry.resolve(frame.t === 'accepted' ? null : (frame as { reason: string }).reason);
         return;
       }
@@ -341,6 +390,14 @@ export class DshClient {
           clearTimeout(entry.timer);
           entry.resolve(null);
         }
+        return;
+      }
+      if (frame.t === 'created') {
+        const entry = this.waitingNew.get(frame.id);
+        if (!entry) return;
+        clearTimeout(entry.timer);
+        this.waitingNew.delete(frame.id);
+        entry.resolve({ ok: true, session: frame.session });
         return;
       }
       this.opts.onFrame(frame);
@@ -458,6 +515,11 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'unpinned':
       return { t: 'unpinned' };
+    case 'created': {
+      const id = str('id');
+      const session = str('session');
+      return id === null || session === null ? null : { t: 'created', id, session };
+    }
     default:
       return null;
   }

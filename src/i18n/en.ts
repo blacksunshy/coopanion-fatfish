@@ -36,6 +36,9 @@ export const en: FatfishText = {
       return `Session: ${session}, model: ${model}${flagTxt}`;
     },
     testFailed: 'Refresh test failed: bridge unreachable',
+    newSession: 'New session',
+    created: (session) => `Started DSH session ${session}; the pet is on it.`,
+    createFailed: 'New session failed: ',
     pickSession: 'Pick a session',
     pickHide: 'Hide list',
     noSessions: 'No live sessions in DSH',
@@ -80,5 +83,7 @@ export const en: FatfishText = {
     sendFailed: 'Not handed to DSH: {reason}',
     statusConnected: 'Connected (session {session}, model {model})',
     statusOffline: 'Not connected',
+    newSessionDone: 'Started DSH session {session}; lines you hand over now go there.',
+    newSessionFailed: 'Could not start a session: {reason}',
   },
 };

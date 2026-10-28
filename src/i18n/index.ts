@@ -48,6 +48,12 @@ export interface FatfishText {
     testResult: (session: string, model: string, sessionChanged?: boolean, modelChanged?: boolean) => string;
     /** Test refresh failed (bridge not reachable). */
     testFailed: string;
+    /** "New session" button label — starts a DSH conversation when none is open. */
+    newSession: string;
+    /** New session succeeded, argument is the session id. */
+    created: (session: string) => string;
+    /** New session failed prefix (error reason appended). */
+    createFailed: string;
     /** "Pick a session" toggle button label — opens the list of live DSH sessions. */
     pickSession: string;
     /** Label of the same button while the list is open. */
@@ -100,6 +106,10 @@ export interface FatfishText {
     sendFailed: string;
     statusConnected: string;
     statusOffline: string;
+    /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
+    newSessionDone: string;
+    /** `dsh_new_session` failed; `{reason}` is DSH's own wording. */
+    newSessionFailed: string;
   };
 }
 

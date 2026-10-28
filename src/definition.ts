@@ -61,6 +61,17 @@ const DESCRIBE: WorldDescribe = {
       summary: { zh: '把桌宠说话的对象切到另一个 DSH 会话（按 id）。', en: 'Switch the DSH session the pet speaks into, by id.' },
     },
     {
+      name: 'dsh_new_session',
+      description:
+        'Start a new DeepSeek Harness conversation and point this pet at it. ' +
+        'Use it when the person asks for a new session, or when DSH has no open conversation — for example after they archived them all, ' +
+        'which makes dsh_send refuse with "no conversation is open on the DSH side". ' +
+        'The receipt names the new session; words you hand over afterwards go there.',
+      tags: ['speak'],
+      parameters: { type: 'object', properties: {} },
+      summary: { zh: '在 DSH 侧新建一个会话，并把桌宠接过去。', en: 'Start a new DSH conversation and point this pet at it.' },
+    },
+    {
       name: 'tts_hush',
       description:
         'Stop the voice that reads your replies aloud, right now. ' +

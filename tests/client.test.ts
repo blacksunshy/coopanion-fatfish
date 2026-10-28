@@ -241,3 +241,56 @@ describe('the client', () => {
     expect(connections.count).toBe(seen);
   });
 });
+
+describe('a conversation the pet asks for', () => {
+  it('is requested with an id, and the Host names the session it made', async () => {
+    const { client } = await hosting((socket, hello) => {
+      if (hello.t === 'hello') {
+        socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1', cwd: '/w', model: '' }));
+        return;
+      }
+      if (hello.t === 'new') socket.send(JSON.stringify({ t: 'created', id: hello.id, session: 's-new' }));
+    });
+    await until(() => client.connected);
+    expect(await client.newSession()).toEqual({ ok: true, session: 's-new' });
+  });
+
+  it('reports the Host\'s refusal instead of hanging', async () => {
+    const { client } = await hosting((socket, frame) => {
+      if (frame.t === 'hello') {
+        socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+        return;
+      }
+      if (frame.t === 'new') socket.send(JSON.stringify({ t: 'refused', id: frame.id, reason: 'no workspace to create it in' }));
+    });
+    await until(() => client.connected);
+    expect(await client.newSession()).toEqual({ ok: false, reason: 'no workspace to create it in' });
+  });
+
+  it('does not put a refusal on the wrong waiter', async () => {
+    const { client } = await hosting((socket, frame) => {
+      if (frame.t === 'hello') {
+        socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+        return;
+      }
+      if (frame.t === 'say') socket.send(JSON.stringify({ t: 'refused', id: frame.id, reason: 'no conversation is open on the DSH side' }));
+      if (frame.t === 'new') socket.send(JSON.stringify({ t: 'created', id: frame.id, session: 's-new' }));
+    });
+    await until(() => client.connected);
+    const [said, made] = await Promise.all([client.say('你好'), client.newSession()]);
+    expect(said).toBe('no conversation is open on the DSH side');
+    expect(made).toEqual({ ok: true, session: 's-new' });
+  });
+
+  it('says the request never left when the bridge is down', async () => {
+    const client = new DshClient({
+      url: () => 'ws://127.0.0.1:1/coopanion/pet',
+      name: () => 'Coo',
+      onFrame: () => {},
+      onState: () => {},
+      log: () => {},
+    });
+    expect(await client.newSession()).toEqual({ ok: false, reason: 'unsent' });
+    client.stop();
+  });
+});
