@@ -49,6 +49,21 @@
       }
     },
     {
+      "name": "dsh_new_session",
+      "description": "Start a new DeepSeek Harness conversation and point this pet at it. Use it when the person asks for a new session, or when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with \"no conversation is open on the DSH side\". The receipt names the new session; words you hand over afterwards go there.",
+      "tags": [
+        "speak"
+      ],
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "summary": {
+        "zh": "在 DSH 侧新建一个会话，并把桌宠接过去。",
+        "en": "Start a new DSH conversation and point this pet at it."
+      }
+    },
+    {
       "name": "tts_hush",
       "description": "Stop the voice that reads your replies aloud, right now. Call it when the person asks for silence, asks you to skip the rest of what you were saying, or before a long stretch of quiet work. It stops the line being spoken and drops the lines still queued; nothing queued after it is spoken. It affects only the sound; the bubble text is untouched.",
       "tags": [

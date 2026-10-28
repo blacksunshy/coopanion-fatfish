@@ -28,7 +28,9 @@ export type HostFrame =
   /** Answer to a `pick` request: the pet now speaks into this session. */
   | { t: 'picked'; session: string }
   /** Answer to a `pick` request: the Host refused the switch (session not live). */
-  | { t: 'refused'; reason: string };
+  | { t: 'refused'; reason: string }
+  /** Answer to a `new` request: the Host created this conversation and owns it now. */
+  | { t: 'created'; id: string; session: string };
 
 export interface DshClientOptions {
   /** Read at each attempt, so a corrected address is used by the next reconnect. */
@@ -41,6 +43,9 @@ export interface DshClientOptions {
   onState(connected: boolean, detail: DshSession | null): void;
   log(level: 'info' | 'warn', text: string): void;
 }
+
+/** What a `new` request settled to: the conversation the Host made, or why it made none. */
+export type NewSessionOutcome = { ok: true; session: string } | { ok: false; reason: string };
 
 /** What the Host said about itself in `ready`. */
 export interface DshSession {
@@ -61,6 +66,8 @@ export class DshClient {
   private readonly waiting = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
   /** `pick` frames waiting for the Host's answer, by session id. */
   private readonly waitingPick = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
+  /** `new` frames waiting for the Host's answer, by request id. */
+  private readonly waitingNew = new Map<string, { resolve: (outcome: NewSessionOutcome) => void; timer: NodeJS.Timeout }>();
   private seq = 0;
 
   constructor(private readonly opts: DshClientOptions) {}
@@ -91,6 +98,11 @@ export class DshClient {
       entry.resolve('the bridge stopped before DSH answered');
     }
     this.waitingPick.clear();
+    for (const [, entry] of this.waitingNew) {
+      clearTimeout(entry.timer);
+      entry.resolve({ ok: false, reason: 'the bridge stopped before DSH answered' });
+    }
+    this.waitingNew.clear();
     const socket = this.socket;
     this.socket = null;
     if (socket) {
@@ -180,6 +192,34 @@ export class DshClient {
     });
   }
 
+  /**
+   * Start a new DSH conversation and point this pet at it. The Host makes one when the person
+   * archived every session, so the pet is not left with nowhere to speak; the answer carries the
+   * session id, and the `ready` frame that follows does the binding.
+   *
+   * Resolves `{ ok: false, reason: 'unsent' }` when the bridge is down, so the caller can say the
+   * request never left instead of reporting a failure that may not have happened.
+   */
+  newSession(): Promise<NewSessionOutcome> {
+    if (!this.connected) return Promise.resolve({ ok: false, reason: 'unsent' });
+    const id = `n${++this.seq}`;
+    return new Promise<NewSessionOutcome>((resolve) => {
+      const timer = setTimeout(() => {
+        this.waitingNew.delete(id);
+        resolve({ ok: false, reason: 'DSH did not answer in time' });
+      }, 20_000);
+      timer.unref?.();
+      this.waitingNew.set(id, { resolve, timer });
+      try {
+        this.socket!.send(JSON.stringify({ t: 'new', id }));
+      } catch {
+        clearTimeout(timer);
+        this.waitingNew.delete(id);
+        resolve({ ok: false, reason: 'unsent' });
+      }
+    });
+  }
+
   private connect(): void {
     if (this.stopped) return;
     let socket: WebSocket;
@@ -207,6 +247,14 @@ export class DshClient {
         this.opts.onState(true, { session: frame.session, cwd: frame.cwd, model: frame.model });
         return;
       }
+      if (frame.t === 'created') {
+        const entry = this.waitingNew.get(frame.id);
+        if (!entry) return;
+        clearTimeout(entry.timer);
+        this.waitingNew.delete(frame.id);
+        entry.resolve({ ok: true, session: frame.session });
+        return;
+      }
       if (frame.t === 'accepted' || frame.t === 'refused') {
         // A `refused` frame without an id answers a `pick`, not a `say`.
         if (frame.t === 'refused' && !('id' in frame)) {
@@ -217,7 +265,15 @@ export class DshClient {
           entry.resolve(frame.reason);
           return;
         }
-        const entry = this.waiting.get((frame as { id: string }).id);
+        const answerId = (frame as { id: string }).id;
+        const created = this.waitingNew.get(answerId);
+        if (created) {
+          clearTimeout(created.timer);
+          this.waitingNew.delete(answerId);
+          created.resolve({ ok: false, reason: (frame as { reason?: string }).reason ?? 'DSH refused to create a conversation' });
+          return;
+        }
+        const entry = this.waiting.get(answerId);
         if (!entry) return;
         clearTimeout(entry.timer);
         this.waiting.delete((frame as { id: string }).id);
@@ -326,6 +382,11 @@ export function parseHostFrame(raw: string): HostFrame | null {
     case 'picked': {
       const session = str('session');
       return session === null ? null : { t: 'picked', session };
+    }
+    case 'created': {
+      const id = str('id');
+      const session = str('session');
+      return id === null || session === null ? null : { t: 'created', id, session };
     }
     default:
       return null;

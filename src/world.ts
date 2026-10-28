@@ -586,6 +586,28 @@ export class FatfishWorld implements World {
         },
       },
       {
+        name: 'dsh_new_session',
+        description: [
+          'Start a new DeepSeek Harness conversation and point this pet at it.',
+          'Use it when the person asks for a new session, or when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with "no conversation is open on the DSH side".',
+          'The receipt names the new session; words you hand over afterwards go there.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: { type: 'object', properties: {} },
+        handler: async () => {
+          if (!this.client) return t.newSessionFailed.replace('{reason}', t.notConnected);
+          const outcome = await this.client.newSession();
+          if (!outcome.ok) {
+            return t.newSessionFailed.replace('{reason}', outcome.reason === 'unsent' ? t.notConnected : outcome.reason);
+          }
+          // The Host binds as it creates; clearing the pin keeps a stale "hold this one" from
+          // pulling the pet back to the conversation the person just replaced.
+          this.pinnedSession = null;
+          this.session = outcome.session;
+          return t.newSessionDone.replace('{session}', outcome.session);
+        },
+      },
+      {
         name: 'tts_hush',
         description: [
           'Stop the voice that reads your replies aloud, right now.',
@@ -660,6 +682,14 @@ export class FatfishWorld implements World {
       invoke: async (panel, method, args) => {
         if (panel !== 'dsh') throw new Error(`unknown panel ${panel}`);
         if (method === 'state') return this.state();
+        if (method === 'new') {
+          if (!this.client) throw new Error('DSH bridge not connected');
+          const outcome = await this.client.newSession();
+          if (!outcome.ok) throw new Error(outcome.reason);
+          this.pinnedSession = null;
+          this.session = outcome.session;
+          return { ok: true, session: outcome.session };
+        }
         if (method === 'bind') {
           const session = typeof args?.[0] === 'string' ? args[0].trim() : '';
           if (!session) throw new Error('no session id');

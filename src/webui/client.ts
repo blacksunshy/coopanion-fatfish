@@ -2,8 +2,9 @@
  * The WebUI panel for the bridge: the Host half's address, the conversation its notices belong
  * to, and the protocol revision both halves speak. A pair of buttons lets the person pin the
  * pet to the current session so it keeps speaking into it even after DSH moves the default
- * owner elsewhere, plus a test button to force-read the bridge state and confirm the session
- * id has refreshed after an auto-repick.
+ * owner elsewhere, a button that starts a new DSH conversation when none is open, plus a test
+ * button to force-read the bridge state and confirm the session id has refreshed after an
+ * auto-repick.
  */
 import type { WebUiClientBundle, WebUiPanel, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
 import { fatfishText } from '../i18n/index.ts';
@@ -39,7 +40,8 @@ const bridgePanel: WebUiPanel = {
       button(label: string, opts?: { size?: string; variant?: string; onClick?: () => void }): HTMLElement;
     };
 
-    const bindBtn = asUi.button(t.panel.bind, { size: 'sm', variant: 'primary' });
+    const newBtn = asUi.button(t.panel.newSession, { size: 'sm', variant: 'primary' });
+    const bindBtn = asUi.button(t.panel.bind, { size: 'sm' });
     const unbindBtn = asUi.button(t.panel.unbind, { size: 'sm' });
     const testBtn = asUi.button(t.panel.testRefresh, { size: 'sm' });
 
@@ -80,7 +82,7 @@ const bridgePanel: WebUiPanel = {
       }
       testBtn.toggleAttribute('disabled', !bridge.connected);
       while (actions.firstChild) actions.removeChild(actions.firstChild);
-      actions.append(bindBtn, unbindBtn, testBtn);
+      actions.append(newBtn, bindBtn, unbindBtn, testBtn);
     };
 
     const refresh = async (): Promise<BridgeState | null> => {
@@ -106,6 +108,21 @@ const bridgePanel: WebUiPanel = {
         msg.textContent = t.panel.bound(result.session);
       } catch (err: unknown) {
         msg.textContent = t.panel.bindFailed + (err instanceof Error ? err.message : String(err));
+      } finally {
+        pending = false;
+        await refresh();
+      }
+    };
+
+    const startSession = async (): Promise<void> => {
+      pending = true;
+      msg.textContent = '';
+      try {
+        const result = await ctx.invoke<{ ok: boolean; session: string }>('new');
+        msg.textContent = t.panel.created(result.session);
+      } catch (err: unknown) {
+        const reason = err instanceof Error ? err.message : String(err);
+        msg.textContent = reason === 'unsent' ? t.panel.notConnected : t.panel.createFailed + reason;
       } finally {
         pending = false;
         await refresh();
@@ -149,6 +166,7 @@ const bridgePanel: WebUiPanel = {
       );
     };
 
+    newBtn.addEventListener('click', () => void startSession());
     bindBtn.addEventListener('click', () => void bindCurrent());
     unbindBtn.addEventListener('click', () => void unbind());
     testBtn.addEventListener('click', () => void testRefresh());

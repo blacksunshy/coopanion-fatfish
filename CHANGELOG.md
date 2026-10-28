@@ -1,5 +1,12 @@
 # 更新说明
 
+## 0.6.11 — 没有会话时新建一个
+
+- **面板新增「新建会话」按钮，Coo 新增 `dsh_new_session` 工具**：所有会话都被归档后，DSH 侧没有打开的会话，`dsh_send` 会被拒回；现在可以在 DSH 侧开一个新会话，建好即是 owner，桌宠自动接过去（协议新增 `new` / `created` 一对帧）
+- 需要 DSH 侧 `coopanion-connector-dsh ≥ 0.2.11`；旧版 Host 不认识 `new` 帧，会连上但一直等不到会话
+- 新建成功会清掉「固定到当前会话」的 pin：你刚换掉的会话不该再把桌宠拉回去
+- `dsh_send` 的拒回文案在无会话时改为指向 `dsh_new_session`，Coo 能自己补齐这一步
+
 ## 0.6.10 — relayPerson 回归默认关（opt-in）+ DSH connector 升级提醒
 
 ### 为什么又把 relayPerson 改回默认关
