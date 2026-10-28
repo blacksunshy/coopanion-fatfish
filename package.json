@@ -1,8 +1,8 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "type": "module",
-  "description": "和 DeepSeek Harness（DSH）对话让它帮你干活写代码，宠物回复时用内置语音包读出声（朗读支持 Windows 与 macOS）。桥接这半边需要先装 DSH 的 Host 插件（coopanion-connector-dsh）才会连；不会装就看源码仓库的说明，或把仓库地址交给 AI 帮你装。固定会话需 DSH 侧插件 coopanion-connector-dsh ≥ 0.2.4（仅 GitHub 分发，未上 npm）。默认关闭 relayPerson 与 relayPet 两个自动转发开关；DSH 侧插件请升到 v0.2.9 修复 CSWSH 安全漏洞。/ Chat with DeepSeek Harness (DSH) so it does the work — writing code for you — and hear the pet's replies read aloud with built-in voices (Windows and macOS). The bridge half needs the DSH Host extension first; if that sounds hard, open the source repo and let an AI walk you through it. Pinning a session needs the DSH host extension ≥ 0.2.4 (GitHub only, not on npm). Both relayPerson and relayPet are off by default. UPGRADE the DSH host plugin to v0.2.9 for a CSWSH security fix.",
+  "description": "DSH 对话 语音朗读（Win/macOS）。需 coopanion-connector-dsh（GitHub only, ≥0.2.4）。默认关转发；DSH 升 v0.2.9 修 CSWSH。/ Chat w/ DSH, voices (Win/macOS). Needs DSH host (GitHub only). relayPerson & relayPet off. UPGRADE to v0.2.9.",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {

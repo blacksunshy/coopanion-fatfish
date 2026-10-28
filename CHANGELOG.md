@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.7 — 修复 npm description 被截断
+
+npm registry 对 `description` 字段有 **255 字节硬上限**。0.6.6 的 package.json 写了 772 字符的中英双语完整 description，publish 时被强制截断到 255 字节，安全提醒的后半段全没了。这次把双语 description 压缩到 254 字节内，同时保留所有关键信息：默认关转发 + DSH 升 v0.2.9 修 CSWSH。
+
+> 注意：255 字节是 UTF-8 字节不是字符数，中文 1 字 = 3 字节，英文 1 字母 = 1 字节。以后每次写 description 都要 `[Text.Encoding]::UTF8.GetByteCount()` 算一遍再 publish。
+
 ## 0.6.6
 
 - 默认关闭「转发人物的话」(`relayPerson`)：之前只有「转发桌宠的话」默认关，现在两边都默认关。要让桌宠自动把你说的话（打字、语音转写）转交给 DSH，需要手动在配置里开回去；**这是安全默认值，避免未经审视的自动转交**
