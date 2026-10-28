@@ -1,5 +1,32 @@
 # 更新说明
 
+## 0.6.10 — relayPerson 回归默认关（opt-in）+ DSH connector 升级提醒
+
+### 为什么又把 relayPerson 改回默认关
+
+0.6.6 把 relayPerson（转发人物打字到 DSH）默认从 `true` 改成 `false`，本意是"诚实认识论"——桌宠是第二张嘴，不是静默输入通道，默认关避免两边互聊循环。但那次改默认值**没有在 UI 上给够提示**，导致用户升级后桥明明连着、打字却不自动转 DSH，必须手动开配置才恢复——**默认关等于升级后主路径功能消失**。
+
+0.6.9 改回了 `true`（让主路径先能用）。但回归 opt-in 才是长期方向：**基础设施不替用户做"要不要转发"的决定**。
+
+这次 0.6.10 把 relayPerson 再改回 `false`，但**三个关键变化**保证不再踩 0.6.6 的坑：
+
+1. **所有面向用户的文案（README、package.json locales、扩展市场描述）最显眼位置明确写了怎么开、为什么开**
+2. **明确写了为什么要升级 DSH connector 到 ≥ 0.2.10**——v0.2.10 修复 CSWSH 安全漏洞 + 自动转发默认开 + 持久化（关掉的开关重启不丢）
+3. **config.ts 里 relayPerson 和 relayPet 对称**——两个都是默认关，用户按自己的场景 opt-in
+
+### 关于 relayPet（保持默认关）
+
+relayPet（转发桌宠台词到 DSH）从 0.6.5 起就默认关，这次不动。原因：桌宠台词 → DSH → 桌宠听到 DSH 回复 → 桌宠再说话，容易形成两嘴互聊循环。只有当你明确要"让桌宠说的每句话也变成 DSH 的 user/message"时才开它。
+
+### 关于 DSH connector-dsh ≥ 0.2.10
+
+这是**强升级要求**。低于 0.2.10 的 connector：
+- v0.2.9 只修了 CSWSH（Origin 拒绝），但自动转发仍是默认关，没有持久化
+- v0.2.8 之前没有 CSWSH 修复，也没有持久化
+- **只有 ≥ 0.2.10** 同时满足：CSWSH 修复 + 自动转发默认开 + 持久化（关掉的开关写入 coopanion-forward.json）
+
+> ⚠️ connector 是独立仓库（https://github.com/blacksunshy/coopanion-connector-dsh），仅 GitHub 分发，不上 npm。DSH desktop profile 里用 `pnpm add github:blacksunshy/coopanion-connector-dsh` 升级。
+
 ## 0.6.9 — 把 relayPerson 默认值改回 true
 
 0.6.6 把「转发人物的话」(`relayPerson`) 默认从 `true` 改成 `false`，本意是安全默认值（诚实认识论）。但这是主路径功能——绝大多数用户升级后桥明明连着，打字却自动不转 DSH，要手动开配置才恢复。**默认关 = 升级等于功能消失**，不合适。

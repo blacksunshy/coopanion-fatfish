@@ -90,7 +90,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   enabled: true,
   bridgeEnabled: true,
   url: DEFAULT_URL,
-  relayPerson: true,
+  relayPerson: false,
   relayPet: false,
   ttsEnabled: true,
   preset: CUSTOM_PRESET,
