@@ -2,7 +2,7 @@
   "name": "cortico-world-fatfish",
   "version": "0.6.12",
   "type": "module",
-  "description": "DSH 对话/语音。会话选择器与解除固定需 connector-dsh ≥0.2.11，新建会话需 ≥0.2.12（仅GitHub）。relayPerson & relayPet 默认关。 / DSH chat/voices. Picker/unpin need connector-dsh >=0.2.11, new-session >=0.2.12 (GitHub only). Both relays off.",
+  "description": "DSH 对话/语音。新建会话需 connector-dsh ≥0.2.12（仅GitHub）。relay 默认关。 / DSH chat/voices. New-session needs connector-dsh >=0.2.12 (GitHub only). Relays off.",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {
