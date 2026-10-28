@@ -34,7 +34,7 @@ export interface FatfishText {
     pinned: string;
     /** Row label shown when DSH default owner differs from the pinned one. */
     following: string;
-    /** Bind button disabled because bridge is not connected. */
+    /** Shown when the bridge is down (bind disabled; picker shows it on failure). */
     notConnected: string;
     /** Bind succeeded, argument is session id. */
     bound: (session: string) => string;
@@ -48,6 +48,18 @@ export interface FatfishText {
     testResult: (session: string, model: string, sessionChanged?: boolean, modelChanged?: boolean) => string;
     /** Test refresh failed (bridge not reachable). */
     testFailed: string;
+    /** "Pick a session" toggle button label — opens the list of live DSH sessions. */
+    pickSession: string;
+    /** Label of the same button while the list is open. */
+    pickHide: string;
+    /** Shown inside the picker when DSH reports no live session. */
+    noSessions: string;
+    /** Shown inside the picker when the Host never answered the list request. */
+    listFailed: string;
+    /** Marker on the row the pet currently speaks into. */
+    current: string;
+    /** Marker on the row that is DSH's default owner. */
+    owner: string;
   };
   config: {
     // the bridge group

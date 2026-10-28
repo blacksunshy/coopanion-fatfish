@@ -176,11 +176,48 @@ describe('a line the pet sends', () => {
   });
 });
 
+describe('the pin the Host holds', () => {
+  it('is dropped once the Host confirms', async () => {
+    const { hellos } = await hosting((socket, hello) => {
+      if (hello.t === 'hello') {
+        socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+        return;
+      }
+      socket.send(JSON.stringify({ t: 'unpinned' }));
+    });
+    const client = open.at(-1)!.client;
+    await until(() => hellos.length >= 1 && client.connected);
+    expect(await client.unpin()).toBeNull();
+    expect(hellos[1]).toMatchObject({ t: 'unpin' });
+  });
+
+  it('reports unsent when there is no connection', async () => {
+    const client = new DshClient({
+      url: () => 'ws://127.0.0.1:1/coopanion/pet',
+      name: () => 'Coo',
+      onFrame: () => {},
+      onState: () => {},
+      log: () => {},
+    });
+    expect(await client.unpin()).toBe('unsent');
+  });
+});
+
 describe('a frame this pet does not understand', () => {
   it('is read when it is one this version knows', () => {
     expect(parseHostFrame('{"t":"ready","v":1,"session":"s","cwd":"/w","model":"m"}')).toEqual({ t: 'ready', v: 1, session: 's', cwd: '/w', model: 'm' });
     expect(parseHostFrame('{"t":"turn-start","turn":2}')).toEqual({ t: 'turn-start', turn: 2 });
     expect(parseHostFrame('{"t":"turn-end","turn":2,"reason":"completed"}')).toEqual({ t: 'turn-end', turn: 2, reason: 'completed' });
+    expect(
+      parseHostFrame(
+        '{"t":"session-list","pinned":true,"sessions":[{"id":"a","cwd":"/w","model":"m","owner":true,"pinned":true,"subagent":false}]}',
+      ),
+    ).toEqual({
+      t: 'session-list',
+      pinned: true,
+      sessions: [{ id: 'a', cwd: '/w', model: 'm', owner: true, pinned: true, subagent: false }],
+    });
+    expect(parseHostFrame('{"t":"unpinned"}')).toEqual({ t: 'unpinned' });
   });
 
   it('is ignored when it is malformed or from a later Host', () => {

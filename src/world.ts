@@ -659,7 +659,16 @@ export class FatfishWorld implements World {
       ],
       invoke: async (panel, method, args) => {
         if (panel !== 'dsh') throw new Error(`unknown panel ${panel}`);
-        if (method === 'state') return this.state();
+        if (method === 'state') {
+          // DSH sends nothing when a person merely switches tabs, so a polled state would keep
+          // showing the session this World connected with. Ask the Host for its real owner first.
+          if (this.client && this.connected) await this.syncOwner();
+          return this.state();
+        }
+        if (method === 'listSessions') {
+          if (!this.client || !this.connected) throw new Error('DSH bridge not connected');
+          return this.client.listSessions();
+        }
         if (method === 'bind') {
           const session = typeof args?.[0] === 'string' ? args[0].trim() : '';
           if (!session) throw new Error('no session id');
@@ -671,12 +680,32 @@ export class FatfishWorld implements World {
           return { ok: true, session };
         }
         if (method === 'unbind') {
+          // The pin lives in the Host, so clearing it here alone would leave the pet speaking into
+          // the "released" session. Tell the Host, then forget it locally.
+          if (this.client && this.connected) {
+            const refusal = await this.client.unpin();
+            if (refusal) throw new Error(refusal);
+          }
           this.pinnedSession = null;
           return { ok: true };
         }
         throw new Error(`unknown ${panel}.${method}`);
       },
     };
+  }
+
+  /**
+   * Take the Host's current owner as this World's session. Only a `ready` frame updates the
+   * session otherwise, and DSH emits nothing when a person switches tabs without speaking — so a
+   * polled panel would keep naming the conversation this World connected with.
+   */
+  private async syncOwner(): Promise<void> {
+    const list = await this.client?.listSessions(2500);
+    if (!list) return;
+    const owner = list.sessions.find((s) => s.owner);
+    if (!owner) return;
+    this.session = owner.id;
+    if (owner.model) this.model = owner.model;
   }
 
   /** What the WebUI page shows; the protocol revision is part of it so a mismatch is visible. */

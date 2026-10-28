@@ -28,7 +28,15 @@ export type HostFrame =
   /** Answer to a `pick` request: the pet now speaks into this session. */
   | { t: 'picked'; session: string }
   /** Answer to a `pick` request: the Host refused the switch (session not live). */
-  | { t: 'refused'; reason: string };
+  | { t: 'refused'; reason: string }
+  /** Answer to a `list-sessions` request: every live session with its owner/pin state. */
+  | {
+      t: 'session-list';
+      sessions: Array<{ id: string; cwd: string; model: string; owner: boolean; pinned: boolean; subagent: boolean }>;
+      pinned: boolean;
+    }
+  /** Answer to `unpin`: the Host dropped the pin, auto-follow takes over again. */
+  | { t: 'unpinned' };
 
 export interface DshClientOptions {
   /** Read at each attempt, so a corrected address is used by the next reconnect. */
@@ -49,6 +57,12 @@ export interface DshSession {
   model: string;
 }
 
+/** Answer to `list-sessions`: the picker's raw material. */
+export interface SessionList {
+  sessions: Array<{ id: string; cwd: string; model: string; owner: boolean; pinned: boolean; subagent: boolean }>;
+  pinned: boolean;
+}
+
 /** Backoff for the first attempts; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000] as const;
 
@@ -61,6 +75,12 @@ export class DshClient {
   private readonly waiting = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
   /** `pick` frames waiting for the Host's answer, by session id. */
   private readonly waitingPick = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
+  /** The one `list-sessions` frame waiting for the Host's answer, if any. */
+  private waitingList:
+    | { resolve: (result: SessionList | null) => void; timer: NodeJS.Timeout; promise: Promise<SessionList | null> }
+    | null = null;
+  /** The one `unpin` frame waiting for the Host's answer, if any. */
+  private waitingUnpin: { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout } | null = null;
   private seq = 0;
 
   constructor(private readonly opts: DshClientOptions) {}
@@ -91,6 +111,16 @@ export class DshClient {
       entry.resolve('the bridge stopped before DSH answered');
     }
     this.waitingPick.clear();
+    if (this.waitingList) {
+      clearTimeout(this.waitingList.timer);
+      this.waitingList.resolve(null);
+      this.waitingList = null;
+    }
+    if (this.waitingUnpin) {
+      clearTimeout(this.waitingUnpin.timer);
+      this.waitingUnpin.resolve('the bridge stopped before DSH answered');
+      this.waitingUnpin = null;
+    }
     const socket = this.socket;
     this.socket = null;
     if (socket) {
@@ -180,6 +210,60 @@ export class DshClient {
     });
   }
 
+  /**
+   * Every live DSH session, for an explicit picker. DSH emits no event when a person merely
+   * switches tabs, so auto-follow cannot see silent navigation; listing plus `pick` replaces
+   * mind-reading. Resolves `null` when the bridge is down, the Host is too old to answer, or the
+   * answer misses `timeoutMs` — a caller polling for display wants to give up sooner than a
+   * person waiting on a button.
+   */
+  listSessions(timeoutMs = 10_000): Promise<SessionList | null> {
+    if (!this.connected) return Promise.resolve(null);
+    if (this.waitingList) return this.waitingList.promise;
+    let resolve!: (result: SessionList | null) => void;
+    const promise = new Promise<SessionList | null>((r) => { resolve = r; });
+    const timer = setTimeout(() => {
+      this.waitingList = null;
+      resolve(null);
+    }, timeoutMs);
+    timer.unref?.();
+    this.waitingList = { resolve, timer, promise };
+    try {
+      this.socket!.send(JSON.stringify({ t: 'list-sessions' }));
+    } catch {
+      clearTimeout(timer);
+      this.waitingList = null;
+      resolve(null);
+    }
+    return promise;
+  }
+
+  /**
+   * Drop the pin so the Host's own auto-follow owns the session again. Without this the pet keeps
+   * speaking into a session the person believes it has let go of: the pin lives in the Host, so a
+   * local-only "unbind" changes nothing but this panel. Resolves `null` when the pin is gone,
+   * `'unsent'` when the bridge is down, or a reason.
+   */
+  unpin(): Promise<string | null> {
+    if (!this.connected) return Promise.resolve('unsent');
+    if (this.waitingUnpin) return Promise.resolve('an unpin request is already in flight');
+    return new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => {
+        this.waitingUnpin = null;
+        resolve('DSH did not answer in time');
+      }, 10_000);
+      timer.unref?.();
+      this.waitingUnpin = { resolve, timer };
+      try {
+        this.socket!.send(JSON.stringify({ t: 'unpin' }));
+      } catch {
+        clearTimeout(timer);
+        this.waitingUnpin = null;
+        resolve('unsent');
+      }
+    });
+  }
+
   private connect(): void {
     if (this.stopped) return;
     let socket: WebSocket;
@@ -208,13 +292,21 @@ export class DshClient {
         return;
       }
       if (frame.t === 'accepted' || frame.t === 'refused') {
-        // A `refused` frame without an id answers a `pick`, not a `say`.
+        // A `refused` frame without an id answers a `pick` or an `unpin`, not a `say`.
         if (frame.t === 'refused' && !('id' in frame)) {
-          const entry = [...this.waitingPick.values()][0];
-          if (!entry) return;
-          clearTimeout(entry.timer);
-          this.waitingPick.clear();
-          entry.resolve(frame.reason);
+          const pick = [...this.waitingPick.values()][0];
+          if (pick) {
+            clearTimeout(pick.timer);
+            this.waitingPick.clear();
+            pick.resolve(frame.reason);
+            return;
+          }
+          const unpin = this.waitingUnpin;
+          if (unpin) {
+            this.waitingUnpin = null;
+            clearTimeout(unpin.timer);
+            unpin.resolve(frame.reason);
+          }
           return;
         }
         const entry = this.waiting.get((frame as { id: string }).id);
@@ -229,6 +321,24 @@ export class DshClient {
         if (entry) {
           clearTimeout(entry.timer);
           this.waitingPick.delete(frame.session);
+          entry.resolve(null);
+        }
+        return;
+      }
+      if (frame.t === 'session-list') {
+        const entry = this.waitingList;
+        this.waitingList = null;
+        if (entry) {
+          clearTimeout(entry.timer);
+          entry.resolve({ sessions: frame.sessions, pinned: frame.pinned });
+        }
+        return;
+      }
+      if (frame.t === 'unpinned') {
+        const entry = this.waitingUnpin;
+        this.waitingUnpin = null;
+        if (entry) {
+          clearTimeout(entry.timer);
           entry.resolve(null);
         }
         return;
@@ -327,6 +437,27 @@ export function parseHostFrame(raw: string): HostFrame | null {
       const session = str('session');
       return session === null ? null : { t: 'picked', session };
     }
+    case 'session-list': {
+      if (!Array.isArray(frame.sessions)) return null;
+      const sessions: SessionList['sessions'] = [];
+      for (const entry of frame.sessions) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const row = entry as Record<string, unknown>;
+        const id = typeof row.id === 'string' ? row.id : '';
+        if (!id) continue;
+        sessions.push({
+          id,
+          cwd: typeof row.cwd === 'string' ? row.cwd : '',
+          model: typeof row.model === 'string' ? row.model : '',
+          owner: row.owner === true,
+          pinned: row.pinned === true,
+          subagent: row.subagent === true,
+        });
+      }
+      return { t: 'session-list', sessions, pinned: frame.pinned === true };
+    }
+    case 'unpinned':
+      return { t: 'unpinned' };
     default:
       return null;
   }
