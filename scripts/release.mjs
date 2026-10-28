@@ -191,12 +191,22 @@ async function verifyCatalog() {
 if (verifyOnly) {
   await verifyCatalog();
 } else {
-  const rl = await import('node:readline');
-  const r = rl.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q) => new Promise((res) => r.question(q, res));
-  const notesZh = await ask('Release notes 中文段（单行）: ');
-  const notesEn = await ask('Release notes English section (single line): ');
-  r.close();
+  // 支持命令行直接传 notes: node scripts/release.mjs 0.6.8 "中文段" "English section"
+  // 否则走 readline 交互
+  let notesZh, notesEn;
+  // verify 模式: --verify <version>
+  // 发布模式: <version> [notesZh notesEn]
+  if (!verifyOnly && args.length >= 3) {
+    notesZh = args[1];
+    notesEn = args[2];
+  } else {
+    const rl = await import('node:readline');
+    const r = rl.createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q) => new Promise((res) => r.question(q, res));
+    notesZh = await ask('Release notes 中文段（单行）: ');
+    notesEn = await ask('Release notes English section (single line): ');
+    r.close();
+  }
   if (!notesZh || !notesEn) fail('notes 不能为空');
 
   preflight();

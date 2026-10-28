@@ -32,7 +32,7 @@ pnpm install
 | --- | --- | --- |
 | `bridgeEnabled` | 启用 DSH 桥接 | `true` |
 | `url` | Host 半区的 WebSocket 地址 | `ws://127.0.0.1:19387/coopanion/pet` |
-| `relayPerson` | 把你说的话转交给 DSH | `false` |
+| `relayPerson` | 把你说的话转交给 DSH | `true` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
 | `preset` | 语音包预设（`custom` 才用下面几项） | `custom` |
