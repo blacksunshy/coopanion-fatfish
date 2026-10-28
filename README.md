@@ -2,6 +2,8 @@
 
 Coopanion 桌宠的 Cortico World 扩展。一句话：**和 DeepSeek Harness（DSH）对话，让它帮你干活、写代码；宠物回复你的时候，用内置语音包读出声。**
 
+> ⚠️ **安全提醒（DSH 侧）**：如果你同时在用 DSH 侧的 `coopanion-connector-dsh` Host 插件，请把它升到 **v0.2.9**（仅 GitHub 分发：`https://github.com/blacksunshy/coopanion-connector-dsh`）。旧版存在 CSWSH 安全漏洞——任意网页可构造 WS 升级请求劫持桌宠与 DSH 之间的桥接（漏洞详情见 connector 仓库 issue #6）。v0.2.9 已修复，升级后建议确认桥接还能正常连上。**fatfish 自己不受这个漏洞影响，但桥接两端要一起升。**
+
 - **让 DSH 干活**：把桌宠接上 DeepSeek Harness（DSH）——它听见你说话就替你转交给 DSH，DSH 干的活、写的代码、调的工具、等的批准，都变成消息回到对话里；没有回执的台词才需要宠物递话，重启后不会重复转交。
 - **回复有声音**：内置 19 个 Edge TTS 音色（晓晓、云希、东北晓北、陕西晓妮、粤语曉曼、台湾曉臻、Aria、Jenny 等），另有一排「语音包」预设——温柔女声、活泼少女、播音腔、东北/陕西口音、粤语、台湾腔、English 各一档，选一个就把音色、语速、音高、音量整套换好；也可以选「自定义」自己调音色、语速、音高、音量。宠物回复你的同时读出声，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
 - **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**固定到当前会话 / `dsh_pick_session` 要求该插件 ≥ 0.2.4**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
@@ -30,7 +32,7 @@ pnpm install
 | --- | --- | --- |
 | `bridgeEnabled` | 启用 DSH 桥接 | `true` |
 | `url` | Host 半区的 WebSocket 地址 | `ws://127.0.0.1:19387/coopanion/pet` |
-| `relayPerson` | 把你说的话转交给 DSH | `true` |
+| `relayPerson` | 把你说的话转交给 DSH | `false` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
 | `preset` | 语音包预设（`custom` 才用下面几项） | `custom` |
