@@ -37,8 +37,16 @@ export type HostFrame =
     }
   /** Answer to `unpin`: the Host dropped the pin, auto-follow takes over again. */
   | { t: 'unpinned' }
-  /** Answer to a `new` request: the Host created this conversation and owns it now. */
-  | { t: 'created'; id: string; session: string };
+  /**
+   * Answer to a `new` request: the Host created this conversation and owns it now.
+   *
+   * `workspace` is the path the conversation actually landed in. A Host from before this field
+   * never knew about the request, so a pet that asked for a workspace must not read the missing
+   * field as success.
+   */
+  | { t: 'created'; id: string; session: string; workspace?: string }
+  /** Answer to `list-workspaces`: the projects a `new` may target. */
+  | { t: 'workspace-list'; workspaces: Array<{ id: string; path: string; sessions: number; owner: boolean }> };
 
 export interface DshClientOptions {
   /** Read at each attempt, so a corrected address is used by the next reconnect. */
@@ -65,8 +73,13 @@ export interface SessionList {
   pinned: boolean;
 }
 
+/** Answer to `list-workspaces`: where a `new` may put a conversation. */
+export interface WorkspaceList {
+  workspaces: Array<{ id: string; path: string; sessions: number; owner: boolean }>;
+}
+
 /** What a `new` request settled to: the conversation the Host made, or why it made none. */
-export type NewSessionOutcome = { ok: true; session: string } | { ok: false; reason: string };
+export type NewSessionOutcome = { ok: true; session: string; workspace?: string } | { ok: false; reason: string };
 
 /** Backoff for the first attempts; the last value repeats. */
 const RETRY_MS = [1000, 2000, 5000, 10_000, 30_000] as const;
@@ -83,6 +96,10 @@ export class DshClient {
   /** The one `list-sessions` frame waiting for the Host's answer, if any. */
   private waitingList:
     | { resolve: (result: SessionList | null) => void; timer: NodeJS.Timeout; promise: Promise<SessionList | null> }
+    | null = null;
+  /** The one `list-workspaces` frame waiting for the Host's answer, if any. */
+  private waitingWorkspaces:
+    | { resolve: (result: WorkspaceList | null) => void; timer: NodeJS.Timeout; promise: Promise<WorkspaceList | null> }
     | null = null;
   /** The one `unpin` frame waiting for the Host's answer, if any. */
   private waitingUnpin: { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout } | null = null;
@@ -122,6 +139,11 @@ export class DshClient {
       clearTimeout(this.waitingList.timer);
       this.waitingList.resolve(null);
       this.waitingList = null;
+    }
+    if (this.waitingWorkspaces) {
+      clearTimeout(this.waitingWorkspaces.timer);
+      this.waitingWorkspaces.resolve(null);
+      this.waitingWorkspaces = null;
     }
     if (this.waitingUnpin) {
       clearTimeout(this.waitingUnpin.timer);
@@ -251,6 +273,33 @@ export class DshClient {
   }
 
   /**
+   * The projects DSH would accept for a `new`, so the pet can name one instead of guessing a path.
+   *
+   * Resolves `null` when the bridge is down, the Host predates the frame, or no answer arrives in
+   * time: a Host that stayed silent is not a Host with no workspaces, and the caller says which.
+   */
+  listWorkspaces(timeoutMs = 10_000): Promise<WorkspaceList | null> {
+    if (!this.connected) return Promise.resolve(null);
+    if (this.waitingWorkspaces) return this.waitingWorkspaces.promise;
+    let resolve!: (result: WorkspaceList | null) => void;
+    const promise = new Promise<WorkspaceList | null>((r) => { resolve = r; });
+    const timer = setTimeout(() => {
+      this.waitingWorkspaces = null;
+      resolve(null);
+    }, timeoutMs);
+    timer.unref?.();
+    this.waitingWorkspaces = { resolve, timer, promise };
+    try {
+      this.socket!.send(JSON.stringify({ t: 'list-workspaces' }));
+    } catch {
+      clearTimeout(timer);
+      this.waitingWorkspaces = null;
+      resolve(null);
+    }
+    return promise;
+  }
+
+  /**
    * Drop the pin so the Host's own auto-follow owns the session again. Without this the pet keeps
    * speaking into a session the person believes it has let go of: the pin lives in the Host, so a
    * local-only "unbind" changes nothing but this panel. Resolves `null` when the pin is gone,
@@ -281,12 +330,17 @@ export class DshClient {
    * archived every session, so the pet is not left with nowhere to speak; the answer carries the
    * session id, and the `ready` frame that follows does the binding.
    *
+   * `workspace` names the project the conversation belongs in — an id, or a path the person said
+   * out loud. A Host that predates the field ignores it and answers with no `workspace` at all,
+   * which is why the answer carries the one it actually used: silence is not consent.
+   *
    * Resolves `{ ok: false, reason: 'unsent' }` when the bridge is down, so the caller can say the
    * request never left instead of reporting a failure that may not have happened.
    */
-  newSession(): Promise<NewSessionOutcome> {
+  newSession(workspace?: string): Promise<NewSessionOutcome> {
     if (!this.connected) return Promise.resolve({ ok: false, reason: 'unsent' });
     const id = `n${++this.seq}`;
+    const target = typeof workspace === 'string' ? workspace.trim() : '';
     return new Promise<NewSessionOutcome>((resolve) => {
       const timer = setTimeout(() => {
         this.waitingNew.delete(id);
@@ -295,7 +349,7 @@ export class DshClient {
       timer.unref?.();
       this.waitingNew.set(id, { resolve, timer });
       try {
-        this.socket!.send(JSON.stringify({ t: 'new', id }));
+        this.socket!.send(JSON.stringify(target ? { t: 'new', id, workspace: target.slice(0, 512) } : { t: 'new', id }));
       } catch {
         clearTimeout(timer);
         this.waitingNew.delete(id);
@@ -383,6 +437,15 @@ export class DshClient {
         }
         return;
       }
+      if (frame.t === 'workspace-list') {
+        const entry = this.waitingWorkspaces;
+        this.waitingWorkspaces = null;
+        if (entry) {
+          clearTimeout(entry.timer);
+          entry.resolve({ workspaces: frame.workspaces });
+        }
+        return;
+      }
       if (frame.t === 'unpinned') {
         const entry = this.waitingUnpin;
         this.waitingUnpin = null;
@@ -397,7 +460,7 @@ export class DshClient {
         if (!entry) return;
         clearTimeout(entry.timer);
         this.waitingNew.delete(frame.id);
-        entry.resolve({ ok: true, session: frame.session });
+        entry.resolve({ ok: true, session: frame.session, workspace: frame.workspace });
         return;
       }
       this.opts.onFrame(frame);
@@ -515,10 +578,27 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'unpinned':
       return { t: 'unpinned' };
+    case 'workspace-list': {
+      if (!Array.isArray(frame.workspaces)) return null;
+      const workspaces: WorkspaceList['workspaces'] = [];
+      for (const entry of frame.workspaces) {
+        if (typeof entry !== 'object' || entry === null) continue;
+        const row = entry as Record<string, unknown>;
+        const id = typeof row.id === 'string' ? row.id : '';
+        if (!id) continue;
+        workspaces.push({
+          id,
+          path: typeof row.path === 'string' ? row.path : '',
+          sessions: typeof row.sessions === 'number' && Number.isFinite(row.sessions) ? row.sessions : 0,
+          owner: row.owner === true,
+        });
+      }
+      return { t: 'workspace-list', workspaces };
+    }
     case 'created': {
       const id = str('id');
       const session = str('session');
-      return id === null || session === null ? null : { t: 'created', id, session };
+      return id === null || session === null ? null : { t: 'created', id, session, workspace: str('workspace') ?? undefined };
     }
     default:
       return null;

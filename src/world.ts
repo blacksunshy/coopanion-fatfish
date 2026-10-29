@@ -105,6 +105,20 @@ export function lineOf(event: EventEnvelope, readOptions: boolean): string {
   return '';
 }
 
+/** Whether a workspace name the model wrote is a path, rather than an id the Host resolves. */
+function looksLikePath(value: string): boolean {
+  return /[\\/]/.test(value) || /^[a-zA-Z]:/.test(value);
+}
+
+/** Do two workspace paths name the same directory on this platform? */
+function sameWorkspacePath(a: string, b: string): boolean {
+  const key = (value: string): string => {
+    const trimmed = value.trim().replace(/[\\/]+$/, '').replace(/\\/g, '/');
+    return process.platform === 'win32' ? trimmed.toLowerCase() : trimmed;
+  };
+  return key(a) === key(b);
+}
+
 /** The environment prompt template; its `{{...}}` holes are filled from `envPromptVars()`. */
 const ENV_PROMPT_FILE = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 
@@ -151,6 +165,11 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /** The address the live socket actually dialled; sampled when the socket was created, so a
+   *  rediscover that clears the hint cannot rewrite history. */
+  private connectedUrl: string | null = null;
+  /** The target handed to DshClient on its last connect() attempt. */
+  private dialingUrl: string | null = null;
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -282,16 +301,22 @@ export class FatfishWorld implements World {
         if (hint !== this.configuredUrl) this.discoveredUrl = hint;
       }
       const client = new DshClient({
-        url: () => this.url,
+        url: () => {
+          const target = this.url;
+          this.dialingUrl = target;
+          return target;
+        },
         name: () => this.opts.name?.() ?? 'Coopanion',
         onFrame: (frame) => void this.onFrame(frame),
         onState: (connected, session) => {
           this.connected = connected;
           this.session = session?.session ?? '';
           this.model = session?.model ?? '';
+          if (!connected) this.connectedUrl = null;
           if (connected) {
             this.everConnected = true;
-            this.rememberPort(FatfishWorld.portOf(this.url));
+            this.connectedUrl = this.dialingUrl ?? this.url;
+            this.rememberPort(FatfishWorld.portOf(this.connectedUrl));
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
             // A pinned session may no longer be the Host's default owner after a reconnect or
@@ -589,14 +614,25 @@ export class FatfishWorld implements World {
         name: 'dsh_new_session',
         description: [
           'Start a new DeepSeek Harness conversation and point this pet at it.',
-          'Use it when the person asks for a new session, or when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with "no conversation is open on the DSH side".',
-          'The receipt names the new session; words you hand over afterwards go there.',
+          'Use it when the person asks for a new session, when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with "no conversation is open on the DSH side" — or when the work belongs in a different project.',
+          'Pass `workspace` with a path or an id from dsh_workspaces to put the conversation in that project; without it the Host uses the current conversation\'s workspace.',
+          'The receipt names the new session and the workspace it landed in; words you hand over afterwards go there.',
         ].join(' '),
         tags: ['speak'],
-        parameters: { type: 'object', properties: {} },
-        handler: async () => {
+        parameters: {
+          type: 'object',
+          properties: {
+            workspace: {
+              type: 'string',
+              maxLength: 512,
+              description: 'Path or id of the DSH workspace to start the conversation in. Omit to stay in the current one.',
+            },
+          },
+        },
+        handler: async (args) => {
           if (!this.client) return t.newSessionFailed.replace('{reason}', t.notConnected);
-          const outcome = await this.client.newSession();
+          const requested = typeof args.workspace === 'string' ? args.workspace.trim() : '';
+          const outcome = await this.client.newSession(requested ? requested : undefined);
           if (!outcome.ok) {
             return t.newSessionFailed.replace('{reason}', outcome.reason === 'unsent' ? t.notConnected : outcome.reason);
           }
@@ -604,7 +640,36 @@ export class FatfishWorld implements World {
           // pulling the pet back to the conversation the person just replaced.
           this.pinnedSession = null;
           this.session = outcome.session;
-          return t.newSessionDone.replace('{session}', outcome.session);
+          if (!requested) return t.newSessionDone.replace('{session}', outcome.session);
+          // A Host from before this field ignores the request and answers with no workspace at all:
+          // report that, instead of a success the caller has no way to check.
+          if (!outcome.workspace) return t.newSessionUnverified.replace('{session}', outcome.session);
+          if (!looksLikePath(requested) || sameWorkspacePath(outcome.workspace, requested)) {
+            return t.newSessionDoneIn.replace('{session}', outcome.session).replace('{workspace}', outcome.workspace);
+          }
+          return t.newSessionMismatch
+            .replace('{session}', outcome.session)
+            .replace('{workspace}', outcome.workspace)
+            .replace('{requested}', requested);
+        },
+      },
+      {
+        name: 'dsh_workspaces',
+        description: [
+          'List the DeepSeek Harness projects (workspaces) this pet may start a conversation in.',
+          'Each row carries a path, an id and how many conversations are open in it; pass either the path or the id as `workspace` to dsh_new_session.',
+          'Ask for it before moving work to another project, so the name you pass is one DSH actually has.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: { type: 'object', properties: {} },
+        handler: async () => {
+          if (!this.client) return t.workspacesFailed.replace('{reason}', t.notConnected);
+          const list = await this.client.listWorkspaces();
+          if (!list) return t.workspacesFailed.replace('{reason}', 'DSH did not answer the workspace list');
+          if (list.workspaces.length === 0) return t.workspacesEmpty;
+          const rows = list.workspaces.map((workspace) =>
+            `- ${workspace.path}  id=${workspace.id}  open=${workspace.sessions}${workspace.owner ? '  (current)' : ''}`);
+          return t.workspacesDone.replace('{list}', rows.join('\n'));
         },
       },
       {
@@ -742,7 +807,7 @@ export class FatfishWorld implements World {
   state(): Record<string, unknown> {
     return {
       connected: this.connected,
-      url: this.url,
+      url: this.connectedUrl ?? this.url,
       session: this.session,
       model: this.model,
       protocol: PROTOCOL_VERSION,

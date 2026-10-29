@@ -84,6 +84,12 @@ export const en: FatfishText = {
     statusConnected: 'Connected (session {session}, model {model})',
     statusOffline: 'Not connected',
     newSessionDone: 'Started DSH session {session}; lines you hand over now go there.',
+    newSessionDoneIn: 'Started DSH session {session} in {workspace}; lines you hand over now go there.',
+    newSessionUnverified: 'Session {session} was created, but this DSH plugin does not report the workspace, so it cannot be confirmed it landed where you asked.',
+    newSessionMismatch: 'Session {session} landed in {workspace}, not the {requested} you asked for — the DSH plugin is probably too old.',
+    workspacesDone: 'Workspaces in DSH:\n{list}',
+    workspacesEmpty: 'DSH has no workspaces yet.',
+    workspacesFailed: 'Could not read the workspace list: {reason}',
     newSessionFailed: 'Could not start a session: {reason}',
   },
 };
