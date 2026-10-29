@@ -151,6 +151,11 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /** The address the live socket actually dialled; sampled when the socket was created, so a
+   *  rediscover that clears the hint cannot rewrite history. */
+  private connectedUrl: string | null = null;
+  /** The target handed to DshClient on its last connect() attempt. */
+  private dialingUrl: string | null = null;
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -282,16 +287,22 @@ export class FatfishWorld implements World {
         if (hint !== this.configuredUrl) this.discoveredUrl = hint;
       }
       const client = new DshClient({
-        url: () => this.url,
+        url: () => {
+          const target = this.url;
+          this.dialingUrl = target;
+          return target;
+        },
         name: () => this.opts.name?.() ?? 'Coopanion',
         onFrame: (frame) => void this.onFrame(frame),
         onState: (connected, session) => {
           this.connected = connected;
           this.session = session?.session ?? '';
           this.model = session?.model ?? '';
+          if (!connected) this.connectedUrl = null;
           if (connected) {
             this.everConnected = true;
-            this.rememberPort(FatfishWorld.portOf(this.url));
+            this.connectedUrl = this.dialingUrl ?? this.url;
+            this.rememberPort(FatfishWorld.portOf(this.connectedUrl));
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
             // A pinned session may no longer be the Host's default owner after a reconnect or
@@ -742,7 +753,7 @@ export class FatfishWorld implements World {
   state(): Record<string, unknown> {
     return {
       connected: this.connected,
-      url: this.url,
+      url: this.connectedUrl ?? this.url,
       session: this.session,
       model: this.model,
       protocol: PROTOCOL_VERSION,
