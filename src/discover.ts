@@ -17,6 +17,7 @@
  * enough to exhaust the ephemeral port range on some Windows setups, and a sweep that dies there
  * finds nothing at all — the slow answer is the only one that still works.
  */
+import { execFileSync } from 'node:child_process';
 import { connect } from 'node:net';
 
 export interface BridgeStatus {
@@ -45,8 +46,34 @@ export interface DiscoverOptions {
  * The Windows/Linux ephemeral range: what `listen(0)` hands out, which is how DSH chooses.
  * A DSH told to use a fixed port is already covered — the caller tries the configured URL first.
  */
-const EPHEMERAL_FROM = 49_152;
-const EPHEMERAL_TO = 65_535;
+/** The port range a `listen(0)` can hand out here, read once and remembered. */
+let cachedRange: { from: number; to: number } | null = null;
+
+function dynamicRange(): { from: number; to: number } {
+  if (cachedRange) return cachedRange;
+  // Broad fallback: slower than a narrow sweep, but it still finds the Host.
+  cachedRange = { from: 1_024, to: 65_535 };
+  if (process.platform === 'win32') {
+    try {
+      const out = execFileSync('netsh', ['int', 'ipv4', 'show', 'dynamicport', 'tcp'], {
+        encoding: 'utf8',
+        timeout: 2_000,
+        windowsHide: true,
+      });
+      // Locale-proof: the two numbers are the start port and the port count.
+      const nums = Array.from(out.matchAll(/:\s*(\d+)/g), (m) => Number(m[1]));
+      const start = nums[0];
+      const count = nums[1];
+      if (Number.isInteger(start) && Number.isInteger(count) && start >= 1 && count > 0) {
+        const to = Math.min(65_535, start + count - 1);
+        if (to > start) cachedRange = { from: start, to };
+      }
+    } catch {
+      // netsh missing or unhappy: keep the broad fallback
+    }
+  }
+  return cachedRange;
+}
 
 /** Would something accept a TCP connection on this loopback port? */
 function reachable(port: number, timeoutMs: number): Promise<boolean> {
@@ -87,8 +114,9 @@ async function identify(port: number, version: number, timeoutMs: number): Promi
  * sweep found nothing. Exceptions are swallowed: a sweep that throws is a sweep that found nothing.
  */
 export async function discoverBridge(opts: DiscoverOptions): Promise<BridgeStatus | null> {
-  const from = opts.from ?? EPHEMERAL_FROM;
-  const to = opts.to ?? EPHEMERAL_TO;
+  const range = dynamicRange();
+  const from = opts.from ?? range.from;
+  const to = opts.to ?? range.to;
   const concurrency = opts.concurrency ?? 64;
   const timeoutMs = opts.timeoutMs ?? 400;
   const stopped = opts.shouldStop ?? (() => false);
