@@ -28,6 +28,28 @@ export const VOICE_OPTIONS_KIND = 'fatfish.voices';
 /** The options kind the voice-pack dropdown fetches its rows under. */
 export const PRESET_OPTIONS_KIND = 'fatfish.presets';
 
+/** The options kind the bridge-notice dropdown fetches its rows under. */
+export const NOTIFY_OPTIONS_KIND = 'fatfish.notify';
+
+/** How much of DSH's progress is handed to the bot. */
+export type NotifyMode =
+  /** Only what DSH produced and what waits on the person: one line per finished turn, plus approvals, questions and errors. */
+  | 'results'
+  /** Every frame, one wake per event — the behaviour before this setting existed. */
+  | 'all'
+  /** Nothing: the pet still talks to DSH, but DSH never wakes it. */
+  | 'off';
+
+/** The dropdown rows for `NOTIFY_OPTIONS_KIND`, in the order the config shows them. */
+export function notifyOptionRows(language?: Language): Array<{ value: NotifyMode; label: string }> {
+  const t = fatfishText(language).config;
+  return [
+    { value: 'results', label: t.notifyResults },
+    { value: 'all', label: t.notifyAll },
+    { value: 'off', label: t.notifyOff },
+  ];
+}
+
 /** The `{value,label}` rows the `/api/config/options/:kind` endpoint serves for the voice dropdown. */
 export function voiceOptionRows(): Array<{ value: string; label: string }> {
   return VOICE_OPTIONS.map((v) => ({ value: v.id, label: v.label }));
@@ -66,6 +88,11 @@ export interface FatfishConfigSection {
   relayPerson: boolean;
   /** Relay what the pet says and does to DSH. */
   relayPet: boolean;
+  /**
+   * How much DSH progress wakes the bot. `results` keeps one notice per finished turn plus the
+   * events that need the person; `all` is one wake per frame; `off` never wakes the bot.
+   */
+  notify: NotifyMode;
   // ---- the voice half ----
   /** Reads the pet's replies aloud. */
   ttsEnabled: boolean;
@@ -92,6 +119,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   url: DEFAULT_URL,
   relayPerson: false,
   relayPet: false,
+  notify: 'results',
   ttsEnabled: true,
   preset: CUSTOM_PRESET,
   voice: DEFAULT_VOICE,
@@ -145,6 +173,7 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
           [at('url')]: { type: 'string', title: t.url, description: t.urlHint, 'x-hot': false },
           [at('relayPerson')]: { type: 'boolean', title: t.relayPerson, description: t.relayPersonHint, 'x-hot': false },
           [at('relayPet')]: { type: 'boolean', title: t.relayPet, description: t.relayPetHint, 'x-hot': false },
+          [at('notify')]: { type: 'string', title: t.notify, description: t.notifyHint, 'x-options': NOTIFY_OPTIONS_KIND, 'x-hot': true },
         },
       },
     },

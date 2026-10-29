@@ -4,10 +4,12 @@ import type { WorldDefinition, WorldContext, WorldDescribe } from 'cortico/world
 import {
   FATFISH_DEFAULTS,
   FATFISH_ID,
+  NOTIFY_OPTIONS_KIND,
   PRESET_OPTIONS_KIND,
   SEND_MAX,
   VOICE_OPTIONS_KIND,
   fatfishConfigGroups,
+  notifyOptionRows,
   presetOptionRows,
   voiceOptionRows,
   type FatfishConfigSection,
@@ -87,8 +89,8 @@ const DESCRIBE: WorldDescribe = {
     {
       type: `${FATFISH_ID}.notice`,
       description: {
-        zh: '桥接通知：人物的台词已转交 DSH、DSH 的回合进度、回复与工具调用、等待批准或回答，以及出错。',
-        en: "Bridge notices: a person's line handed to DSH, DSH turn progress, replies and tool calls, pending approvals or questions, and errors.",
+        zh: '桥接通知：人物的台词已转交 DSH、DSH 每轮结束时的结果与回复、等待批准或回答，以及出错。默认不逐个工具调用唤醒。',
+        en: 'Bridge notices: a person\'s line handed to DSH, the result and reply of each finished DSH turn, pending approvals or questions, and errors. Tool calls no longer wake the bot one by one by default.',
       },
       trigger: 'flush',
     },
@@ -109,6 +111,7 @@ export function fatfishDefinition(assembly: FatfishAssembly = {}): WorldDefiniti
     configOptions: (kind: string, language: Language) => {
       if (kind === VOICE_OPTIONS_KIND) return voiceOptionRows();
       if (kind === PRESET_OPTIONS_KIND) return presetOptionRows(language);
+      if (kind === NOTIFY_OPTIONS_KIND) return notifyOptionRows(language);
       return [];
     },
     preflight: (ctx: WorldContext<FatfishConfigSection>) => {

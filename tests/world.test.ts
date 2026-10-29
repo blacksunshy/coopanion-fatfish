@@ -65,7 +65,28 @@ async function until(check: () => boolean, timeoutMs = 3000): Promise<void> {
 const notices = (host: FakeHost): string[] => host.events.filter((e: EventEnvelope) => e.source === 'fatfish').map((e: EventEnvelope) => e.text);
 
 describe('what DSH progress becomes', () => {
-  it('is one notice per event the person would want to see', async () => {
+  it('is one notice per finished turn by default', async () => {
+    const { host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      for (const notice of [
+        { t: 'turn-start', turn: 7 },
+        { t: 'tool', name: 'read', detail: '{"path":"a.ts"}' },
+        { t: 'tool', name: 'write', detail: '{"path":"b.ts"}' },
+        { t: 'reply', turn: 7, text: '做完了' },
+        { t: 'turn-end', turn: 7, reason: 'completed' },
+      ]) socket.send(JSON.stringify(notice));
+    });
+    await until(() => notices(host).length >= 1);
+    await new Promise((done) => setTimeout(done, 120));
+    expect(notices(host)).toHaveLength(1);
+    const text = notices(host)[0];
+    expect(text).toContain('第 7 轮结束（completed）');
+    expect(text).toContain('做完了');
+    expect(text).toContain('本轮调用 2 次工具');
+    expect(text).not.toContain('调用工具 read');
+  });
+
+  it('is one notice per frame when notify is all', async () => {
     const { host } = await withHost((socket, frame) => {
       if (frame.t !== 'hello') return;
       for (const notice of [
@@ -74,13 +95,28 @@ describe('what DSH progress becomes', () => {
         { t: 'reply', turn: 7, text: '做完了' },
         { t: 'turn-end', turn: 7, reason: 'completed' },
       ]) socket.send(JSON.stringify(notice));
-    });
+    }, { notify: 'all' });
     await until(() => notices(host).length >= 4);
     const text = notices(host).join('\n');
     expect(text).toContain('第 7 轮开始');
     expect(text).toContain('调用工具 read');
     expect(text).toContain('做完了');
     expect(text).toContain('第 7 轮结束（completed）');
+  });
+
+  it('stays silent in the one-way mode', async () => {
+    const { host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      for (const notice of [
+        { t: 'turn-start', turn: 7 },
+        { t: 'tool', name: 'read' },
+        { t: 'reply', turn: 7, text: '做完了' },
+        { t: 'turn-end', turn: 7, reason: 'completed' },
+        { t: 'approval', name: 'write', reason: '' },
+      ]) socket.send(JSON.stringify(notice));
+    }, { notify: 'off' });
+    await new Promise((done) => setTimeout(done, 200));
+    expect(notices(host)).toHaveLength(0);
   });
 
   it('is a notice even when DSH is waiting on the person', async () => {

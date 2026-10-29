@@ -34,6 +34,7 @@ import {
   fatfishConfigGroups,
   resolveSpeak,
   type FatfishConfigSection,
+  type NotifyMode,
 } from './config.ts';
 import { discoverBridge } from './discover.ts';
 import { fatfishText, type FatfishText } from './i18n/index.ts';
@@ -63,6 +64,8 @@ const DISCOVER_MAX_MS = 30_000;
 const BRIDGE_CACHE = 'fatfish-bridge.json';
 /** A remembered port older than this is not worth dialling first. */
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+/** How long a `notify: results` reply waits for its turn-end before it is reported on its own. */
+const RESULT_HOLD_MS = 5_000;
 
 export interface FatfishWorldOptions {
   /** The live `worlds.fatfish` section. */
@@ -151,6 +154,11 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /**
+   * `notify: results` keeps one wake per finished turn: the turn's last reply and its tool count
+   * wait here until `turn-end` arrives, then leave as a single notice.
+   */
+  private turnPending: { turn: number; reply: string | null; tools: number; timer: NodeJS.Timeout | null } | null = null;
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -336,6 +344,7 @@ export class FatfishWorld implements World {
     this.client = null;
     this.connected = false;
     this.pending.length = 0;
+    this.clearTurn();
     this.speechEpoch++;
     this.queuedSpeech = 0;
     await this.speaker.stop();
@@ -471,9 +480,22 @@ export class FatfishWorld implements World {
     }
   }
 
+  /** The configured notice level; a missing or unknown value keeps the default, `results`. */
+  private get notifyMode(): NotifyMode {
+    const mode = this.opts.cfg.notify;
+    return mode === 'all' || mode === 'off' ? mode : 'results';
+  }
+
   /** One notice from DSH, turned into an event for the bot to judge. */
   private async onFrame(frame: HostFrame): Promise<void> {
     if (!this.host) return;
+    const mode = this.notifyMode;
+    if (mode === 'all') this.notifyAll(frame);
+    else if (mode === 'results') this.notifyResult(frame);
+  }
+
+  /** `all`: one notice per frame, the behaviour before the `notify` setting existed. */
+  private notifyAll(frame: HostFrame): void {
     const push = (text: string, meta: Record<string, unknown>): void => this.pushNotice(text, meta);
     switch (frame.t) {
       case 'turn-start':
@@ -504,6 +526,104 @@ export class FatfishWorld implements World {
       case 'refused':
         return;
     }
+  }
+
+  /**
+   * `results`: one wake per finished turn. The turn's tool calls are counted silently and its
+   * latest reply is held until `turn-end`, so a turn that ran a dozen tools still costs one notice.
+   * Approvals, questions and errors break through at once: those are the person's to answer.
+   */
+  private notifyResult(frame: HostFrame): void {
+    switch (frame.t) {
+      case 'turn-start':
+        this.beginTurn(frame.turn);
+        return;
+      case 'tool':
+        this.countTool();
+        return;
+      case 'reply':
+        this.holdReply(frame.turn, frame.text);
+        return;
+      case 'turn-end':
+        this.flushTurn(frame.turn, frame.reason, false);
+        return;
+      case 'approval':
+        this.pushNotice(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
+        return;
+      case 'question':
+        this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'error':
+        this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
+        return;
+      case 'ready':
+      case 'accepted':
+      case 'refused':
+        return;
+    }
+  }
+
+  /** Opens a turn in `results` mode; a new turn replaces whatever the previous one left pending. */
+  private beginTurn(turn: number): void {
+    if (this.turnPending?.turn === turn) return;
+    this.clearTurn();
+    this.turnPending = { turn, reply: null, tools: 0, timer: null };
+  }
+
+  /** Counts a tool call silently; its only trace is the count the turn-end notice carries. */
+  private countTool(): void {
+    if (!this.turnPending) this.turnPending = { turn: 0, reply: null, tools: 0, timer: null };
+    this.turnPending.tools++;
+  }
+
+  /**
+   * Holds the turn's latest reply until `turn-end` arrives, so one finished turn costs one wake
+   * instead of two. A turn whose end never arrives still reports its reply after `RESULT_HOLD_MS`.
+   */
+  private holdReply(turn: number, text: string): void {
+    const current = this.turnPending;
+    if (!current || (current.turn !== turn && current.turn !== 0)) {
+      this.clearTurn();
+      this.turnPending = { turn, reply: text, tools: 0, timer: null };
+    } else {
+      current.turn = turn;
+      current.reply = text;
+    }
+    const pending = this.turnPending!;
+    if (pending.timer) clearTimeout(pending.timer);
+    const timer = setTimeout(() => {
+      if (this.turnPending !== pending) return;
+      this.flushTurn(pending.turn, 'unknown', true);
+    }, RESULT_HOLD_MS);
+    timer.unref?.();
+    pending.timer = timer;
+  }
+
+  /**
+   * Closes the pending turn as one notice: its reason, its last reply and how many tools ran.
+   * `alone` marks a reply reported without a turn-end, so the text does not claim the turn ended.
+   */
+  private flushTurn(turn: number, reason: string, alone: boolean): void {
+    const blend = this.turnPending && (this.turnPending.turn === turn || this.turnPending.turn === 0) ? this.turnPending : null;
+    const reply = blend?.reply ?? null;
+    const tools = blend?.tools ?? 0;
+    this.clearTurn();
+    const head = alone
+      ? turn > 0
+        ? `[DSH] 第 ${turn} 轮有了回复（还没收到结束信号）。`
+        : '[DSH] DSH 回复：'
+      : `[DSH] 第 ${turn} 轮结束（${reason}）。`;
+    const parts = [head];
+    if (reply) parts.push(`回复：${reply.length > RELAY_MAX ? `${reply.slice(0, RELAY_MAX)}…` : reply}`);
+    if (tools > 0) parts.push(`本轮调用 ${tools} 次工具。`);
+    this.pushNotice(parts.join(' '), { kind: alone ? 'reply' : 'turn-end', turn, reason, tools });
+  }
+
+  /** Drops a pending turn and the fallback that would have reported it. */
+  private clearTurn(): void {
+    const pending = this.turnPending;
+    if (pending?.timer) clearTimeout(pending.timer);
+    this.turnPending = null;
   }
 
   /** Hands one line to the speech chain; returns at once, the line speaks when its turn comes. */

@@ -78,6 +78,14 @@ export interface FatfishText {
     relayPersonHint: string;
     relayPet: string;
     relayPetHint: string;
+    notify: string;
+    notifyHint: string;
+    /** The `results` row: one notice per finished turn plus what needs the person. */
+    notifyResults: string;
+    /** The `all` row: one wake per frame. */
+    notifyAll: string;
+    /** The `off` row: DSH never wakes the bot. */
+    notifyOff: string;
     // the voice group
     voiceTitle: string;
     ttsEnabled: string;

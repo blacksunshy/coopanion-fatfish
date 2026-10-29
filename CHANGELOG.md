@@ -1,5 +1,16 @@
 # 更新说明
 
+## 0.6.13 — DSH 通知默认只报结果，不再逐条唤醒（致谢 @minekooooo）
+
+- **新增 `notify` 三档**：
+  - `results`（默认）：每轮结束合并成一条通知，内容含 DSH 的回复与本轮工具调用次数；等待批准、等待回答、出错仍然立即推送
+  - `all`：旧行为，每个事件一条（`turn-start`、每次工具调用、每条回复、`turn-end`）
+  - `off`：只发送不接收——桌宠仍能向 DSH 说话，DSH 不再唤醒桌宠
+- **根因**：connector 对 `turn-start`、每次 `tool/call`、每条 `assistant/message`、`turn-end` 逐帧发帧，桌宠对每一帧推一条 notice 且 `trigger: 'flush'`（立即唤醒 Co）——每条通知 = 一次模型调用。有人实测 DSH 干活 100 秒被唤醒 26 次，绝大多数是工具调用的过程噪音
+- results 档下 5 秒兜底：这一轮迟迟收不到 `turn-end` 时，把已有回复单独报出来，不会因为结束帧丢失而一直沉默
+- 合并只发生在桌宠侧，connector 不需要升级，旧版 Host 一样生效
+- 想看每一步细节时把 `notify` 切回 `all` 即可，不用降级
+
 ## 0.6.12 — 没有会话时新建一个（PR #5，致谢 @ink1453；配合 connector 0.2.12）
 
 - **面板新增「新建会话」按钮，Coo 新增 `dsh_new_session` 工具**：所有会话都被归档后，DSH 侧没有打开的会话，`dsh_send` 会被拒回；现在可以在 DSH 侧开一个新会话，建好即是 owner，桌宠自动接过去（协议新增 `new` / `created` 一对帧）
