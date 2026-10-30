@@ -1,5 +1,31 @@
 # 更新说明
 
+## 0.6.16 — 朗读引擎可插拔（edge / http）+ 可选分句流水线（致谢 @ink1453）
+
+合入社区 PR [#11](https://github.com/blacksunshy/coopanion-fatfish/pull/11)（对应 issue [#10](https://github.com/blacksunshy/coopanion-fatfish/issues/10) 的建议 1 与建议 3）。两项都是 opt-in：**不写新键时，行为与 0.6.15 完全一致**。
+
+### 1) 可插拔朗读引擎
+
+- 新增 `engine`：`edge`（默认，内置微软 Edge TTS）或 `http`（你自己的语音服务）
+- `http` 引擎按最小契约工作：`POST {input, voice, speed}` 到 `httpUrl`，返回 `audio/wav` 或 `audio/mpeg`；音频落临时文件后仍走原来的播放链路（Windows MCI / macOS afplay），打断与 `tts_hush` 全部不变
+- `fallbackEdge`（默认开）：HTTP 服务失败或超时**静默回退 Edge**，宠物不会失声；关掉则跳过该句
+- `timeoutMs`（默认 20000）是单次请求上限；`speed`（默认 1，范围 0.25–4）随请求体发出
+- Windows 播放入口改为按文件扩展名选设备（`.wav` → `waveaudio`，`.mp3` → `mpegvideo`），HTTP 返回 wav 也能直接播
+- 桥接半边零改动，无新依赖（用 Node ≥22 自带的 fetch）
+
+### 2) 分句流水线（opt-in，默认关）
+
+- `sentencePipelineEnabled`（默认 `false`）打开后：不超过 `sentencePipelineMaxChars`（默认 40）的气泡按中英句末标点切开，播第 k 句的同时预合成第 k+1 句，句间空隙只剩剩余合成时间
+- 超过阈值的长句仍整段一次合成：首声慢一些，但绝对没有句缝
+- `tts_hush` 兼容：预合成但还没播的片段会被丢弃，不会在打断之后补念
+- 过短的片段（少于 6 字）会并入下一句，不会单独成片段
+
+### 配置文件写坏也不会失声
+
+非法 `engine` 当 `edge` 处理，数值越界会被钳制，缺省的键全部回落到安全默认值。
+
+关于「说话键取消朗读」和「跨扩展一次只一个声音」：这两项的事件源与约定在 desktop-pet core，本包只消费事件，已在主仓提 issue 跟踪（[Pal-AI-Lab/Coopanion#556](https://github.com/Pal-AI-Lab/Coopanion/issues/556)），不在本版范围。
+
 ## 0.6.15 — 启动不再无条件全端口扫描；自动发现可关闭（VPN 兼容）
 
 市场评论里 @Barlthor 报告：使用本扩展会与 VPN（0cloud）冲突，表现为 VPN 内核反复断开。

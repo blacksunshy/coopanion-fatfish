@@ -37,11 +37,38 @@ pnpm install
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `notify` | DSH 干活时哪些进度唤醒桌宠：`results` 只报每轮结果与待批准/回答，`all` 每个事件都唤醒，`off` 只发送不接收 | `results` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
+| `engine` | 朗读引擎：`edge`（内置 Edge TTS）或 `http`（你自己的语音服务） | `edge` |
+| `httpUrl` | `engine=http` 时 POST 的目标地址，返回 `audio/wav` 或 `audio/mpeg` | 空 |
+| `speed` | `engine=http` 时随请求发出的语速（0.25–4） | `1` |
+| `fallbackEdge` | HTTP 引擎失败/超时时静默回退 Edge（关掉则跳过该句） | `true` |
+| `timeoutMs` | 单次 HTTP 合成请求的超时（毫秒） | `20000` |
+| `sentencePipelineEnabled` | 打开分句流水线：短气泡按句切开并预合成下一句 | `false` |
+| `sentencePipelineMaxChars` | 整段阈值（字）：超过它的气泡整段合成、不分句 | `40` |
 | `preset` | 语音包预设（`custom` 才用下面几项） | `custom` |
 | `voice` | Edge TTS 音色 ShortName（下拉可选，可手填任意官方音色） | `zh-CN-XiaoxiaoNeural` |
 | `rate` / `volume` | 语速 / 音量的相对变化，如 `+15%` | `+0%` |
 | `pitch` | 音高的相对变化，如 `-2Hz` | `+0Hz` |
 | `readOptions` | 桌宠提问时把选项也读出来 | `true` |
+
+### 自建语音服务（`engine=http`）
+
+把 `engine` 设成 `http`、`httpUrl` 填你的服务地址即可。你的服务只需接受：
+
+```
+POST <httpUrl>
+Content-Type: application/json
+{ "input": "要念的文本", "voice": "音色名（来自 voice 配置）", "speed": 1 }
+
+→ 200，响应体为 audio/wav 或 audio/mpeg
+```
+
+音频会落临时文件，再走本包原有的播放/打断/`tts_hush` 链路，所以打断和冷却行为与 Edge 一致。服务挂掉或超过 `timeoutMs` 时，`fallbackEdge` 开着就静默回退 Edge（宠物不会失声），关掉则跳过该句。
+
+### 分句流水线（`sentencePipelineEnabled`）
+
+默认关，关闭时与旧版完全一致。打开后，不超过 `sentencePipelineMaxChars` 字的气泡按中英句末标点切开，播上一句时预合成下一句，句间空隙更短；超过阈值的长句仍整段合成（首声慢一点，但没有句缝）。打断时预合成但未播的片段会被丢弃，不会补念。
+
+> 关于「按说话键取消朗读」与「跨扩展一次只一个声音」：事件源/互斥约定在 Coopanion 的 desktop-pet core，本包只消费事件，已在主仓提 issue 跟踪（`Pal-AI-Lab/Coopanion#556`）。
 
 ## 桥接面板
 
