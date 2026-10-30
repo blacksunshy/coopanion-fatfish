@@ -92,6 +92,24 @@ export interface FatfishText {
     voiceTitle: string;
     ttsEnabled: string;
     ttsEnabledHint: string;
+    engine: string;
+    engineHint: string;
+    /** The `edge` row: the built-in service, the default. */
+    engineEdge: string;
+    /** The `http` row: a server of the person's own. */
+    engineHttp: string;
+    httpUrl: string;
+    httpUrlHint: string;
+    speed: string;
+    speedHint: string;
+    fallbackEdge: string;
+    fallbackEdgeHint: string;
+    timeoutMs: string;
+    timeoutMsHint: string;
+    sentencePipeline: string;
+    sentencePipelineHint: string;
+    sentencePipelineMaxChars: string;
+    sentencePipelineMaxCharsHint: string;
     preset: string;
     presetHint: string;
     /** The row that means "use the four settings below". */
