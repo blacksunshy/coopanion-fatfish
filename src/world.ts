@@ -32,13 +32,14 @@ import {
   RELAY_MAX,
   SEND_MAX,
   fatfishConfigGroups,
+  resolveEngine,
   resolveSpeak,
   type FatfishConfigSection,
   type NotifyMode,
 } from './config.ts';
 import { discoverBridge } from './discover.ts';
 import { fatfishText, type FatfishText } from './i18n/index.ts';
-import { Speaker, type SpeakOptions } from './speaker.ts';
+import { Speaker, type SpeakOptions, type TtsEngineConfig } from './speaker.ts';
 
 /** The event type a person's line carries; the pet World owns the type, this World only reads it. */
 const PERSON_EVENT = 'desktop-pet.message';
@@ -295,6 +296,11 @@ export class FatfishWorld implements World {
 
   private get voice(): SpeakOptions {
     return resolveSpeak(this.opts.cfg);
+  }
+
+  /** The synthesis engine the config names, with the Edge defaults for any key it leaves out. */
+  private get engine(): TtsEngineConfig {
+    return resolveEngine(this.opts.cfg);
   }
 
   async start(host: WorldHost): Promise<void> {
@@ -677,7 +683,7 @@ export class FatfishWorld implements World {
     if (!host || this.opts.cfg.ttsEnabled === false) return;
     this.speaking = true;
     try {
-      const spoken = await this.speaker.speak(line, this.voice, (text) => host.log.info(text));
+      const spoken = await this.speaker.speak(line, this.voice, (text) => host.log.info(text), this.engine);
       host.log.info(spoken ? 'fatfish played' : 'fatfish skipped (cooldown/off-platform)');
       this.failed = !spoken;
     } finally {

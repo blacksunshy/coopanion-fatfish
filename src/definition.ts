@@ -2,12 +2,14 @@
 import type { Language } from 'cortico/core/language.ts';
 import type { WorldDefinition, WorldContext, WorldDescribe } from 'cortico/world.ts';
 import {
+  ENGINE_OPTIONS_KIND,
   FATFISH_DEFAULTS,
   FATFISH_ID,
   NOTIFY_OPTIONS_KIND,
   PRESET_OPTIONS_KIND,
   SEND_MAX,
   VOICE_OPTIONS_KIND,
+  engineOptionRows,
   fatfishConfigGroups,
   notifyOptionRows,
   presetOptionRows,
@@ -133,6 +135,7 @@ export function fatfishDefinition(assembly: FatfishAssembly = {}): WorldDefiniti
       if (kind === VOICE_OPTIONS_KIND) return voiceOptionRows();
       if (kind === PRESET_OPTIONS_KIND) return presetOptionRows(language);
       if (kind === NOTIFY_OPTIONS_KIND) return notifyOptionRows(language);
+      if (kind === ENGINE_OPTIONS_KIND) return engineOptionRows(language);
       return [];
     },
     preflight: (ctx: WorldContext<FatfishConfigSection>) => {

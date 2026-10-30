@@ -6,10 +6,15 @@
  * `bridgeEnabled` so the two on/off switches never collide); a deployment that carried the old
  * section over needs those four values copied, nothing else. The voice is any Edge TTS ShortName;
  * the config offers the short list as choices and accepts a hand-typed one.
+ *
+ * The voice half also names the engine behind it (`edge`, the built-in service and the default, or
+ * `http`, a server of the person's own). The engine keys are add-only: an install that never
+ * touched them speaks through Edge exactly as before.
  */
 import type { Language } from 'cortico/core/language.ts';
 import type { ConfigGroup } from 'cortico/core/config-schema.ts';
 import { fatfishText } from './i18n/index.ts';
+import type { TtsEngineConfig } from './speaker.ts';
 import {
   CUSTOM_PRESET,
   DEFAULT_VOICE,
@@ -31,6 +36,9 @@ export const PRESET_OPTIONS_KIND = 'fatfish.presets';
 /** The options kind the bridge-notice dropdown fetches its rows under. */
 export const NOTIFY_OPTIONS_KIND = 'fatfish.notify';
 
+/** The options kind the engine dropdown fetches its rows under. */
+export const ENGINE_OPTIONS_KIND = 'fatfish.engines';
+
 /** How much of DSH's progress is handed to the bot. */
 export type NotifyMode =
   /** Only what DSH produced and what waits on the person: one line per finished turn, plus approvals, questions and errors. */
@@ -40,6 +48,9 @@ export type NotifyMode =
   /** Nothing: the pet still talks to DSH, but DSH never wakes it. */
   | 'off';
 
+/** Which synthesis engine speaks the pet's lines; `edge` is the default and the old behaviour. */
+export type VoiceEngine = 'edge' | 'http';
+
 /** The dropdown rows for `NOTIFY_OPTIONS_KIND`, in the order the config shows them. */
 export function notifyOptionRows(language?: Language): Array<{ value: NotifyMode; label: string }> {
   const t = fatfishText(language).config;
@@ -47,6 +58,15 @@ export function notifyOptionRows(language?: Language): Array<{ value: NotifyMode
     { value: 'results', label: t.notifyResults },
     { value: 'all', label: t.notifyAll },
     { value: 'off', label: t.notifyOff },
+  ];
+}
+
+/** The dropdown rows for `ENGINE_OPTIONS_KIND`, in the order the config shows them. */
+export function engineOptionRows(language?: Language): Array<{ value: VoiceEngine; label: string }> {
+  const t = fatfishText(language).config;
+  return [
+    { value: 'edge', label: t.engineEdge },
+    { value: 'http', label: t.engineHttp },
   ];
 }
 
@@ -75,6 +95,10 @@ export const SEND_MAX = 4000;
 /** How many characters of one DSH reply the pet is told; the rest is in the DSH console. */
 export const RELAY_MAX = 1200;
 
+/** The bounds the engine settings accept; a hand-edited config outside them is clamped, not obeyed. */
+export const SPEED_RANGE = { min: 0.25, max: 4 } as const;
+export const TIMEOUT_RANGE = { min: 1_000, max: 120_000 } as const;
+
 export interface FatfishConfigSection {
   [key: string]: unknown;
   /** The whole pack; the framework reads this one to decide whether the World mounts. */
@@ -102,12 +126,22 @@ export interface FatfishConfigSection {
   // ---- the voice half ----
   /** Reads the pet's replies aloud. */
   ttsEnabled: boolean;
+  /** Which engine synthesises the speech: `edge` (default) or `http` (a server of the person's own). */
+  engine: VoiceEngine;
+  /** Where the http engine POSTs `{ input, voice, speed }`; empty means it is not configured. */
+  httpUrl: string;
+  /** The `speed` field the http engine sends; `1` is the server's normal pace. */
+  speed: number;
+  /** Fall back to Edge when the http engine fails or times out, instead of skipping the line. */
+  fallbackEdge: boolean;
+  /** How long one http attempt may take, in milliseconds, before it counts as failed. */
+  timeoutMs: number;
   /**
    * A ready-made voice pack, or `custom` to use the four settings below. A pack is a voice plus
    * the pace, tone and loudness that suit it; picking one overrides those settings.
    */
   preset: string;
-  /** The Edge TTS voice ShortName. */
+  /** The Edge TTS voice ShortName; with the http engine it is the `voice` field of the request. */
   voice: string;
   /** Relative speaking rate, e.g. `+15%`. */
   rate: string;
@@ -128,6 +162,11 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   relayPet: false,
   notify: 'results',
   ttsEnabled: true,
+  engine: 'edge',
+  httpUrl: '',
+  speed: 1,
+  fallbackEdge: true,
+  timeoutMs: 20_000,
   preset: CUSTOM_PRESET,
   voice: DEFAULT_VOICE,
   rate: '+0%',
@@ -164,6 +203,27 @@ export function resolveSpeak(cfg: Partial<FatfishConfigSection>): SpeakSettings 
   };
 }
 
+/** A finite number from a possibly hand-edited config, clamped, or the fallback. */
+function numberIn(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+/**
+ * Turns the engine keys into what the Speaker consumes. Missing or nonsensical values all fall
+ * back to the Edge defaults: a config written before these keys existed keeps the old behaviour,
+ * and the http engine cannot take over by accident.
+ */
+export function resolveEngine(cfg: Partial<FatfishConfigSection>): TtsEngineConfig {
+  return {
+    engine: cfg.engine === 'http' ? 'http' : 'edge',
+    httpUrl: typeof cfg.httpUrl === 'string' ? cfg.httpUrl.trim() : '',
+    speed: numberIn(cfg.speed, 1, SPEED_RANGE.min, SPEED_RANGE.max),
+    timeoutMs: Math.round(numberIn(cfg.timeoutMs, 20_000, TIMEOUT_RANGE.min, TIMEOUT_RANGE.max)),
+    fallbackEdge: cfg.fallbackEdge !== false,
+  };
+}
+
 /** The WebUI's config groups for this World; keys are paths inside `worlds.fatfish`. */
 export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
   const t = fatfishText(language).config;
@@ -193,6 +253,31 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
         title: t.voiceTitle,
         properties: {
           [at('ttsEnabled')]: { type: 'boolean', title: t.ttsEnabled, description: t.ttsEnabledHint, 'x-hot': true },
+          [at('engine')]: {
+            type: 'string',
+            title: t.engine,
+            description: t.engineHint,
+            'x-options': ENGINE_OPTIONS_KIND,
+            'x-hot': true,
+          },
+          [at('httpUrl')]: { type: 'string', title: t.httpUrl, description: t.httpUrlHint, 'x-hot': true },
+          [at('speed')]: {
+            type: 'number',
+            title: t.speed,
+            description: t.speedHint,
+            minimum: SPEED_RANGE.min,
+            maximum: SPEED_RANGE.max,
+            'x-hot': true,
+          },
+          [at('fallbackEdge')]: { type: 'boolean', title: t.fallbackEdge, description: t.fallbackEdgeHint, 'x-hot': true },
+          [at('timeoutMs')]: {
+            type: 'number',
+            title: t.timeoutMs,
+            description: t.timeoutMsHint,
+            minimum: TIMEOUT_RANGE.min,
+            maximum: TIMEOUT_RANGE.max,
+            'x-hot': true,
+          },
           [at('preset')]: {
             type: 'string',
             title: t.preset,
