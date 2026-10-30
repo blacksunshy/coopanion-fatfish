@@ -116,6 +116,18 @@ export interface FatfishText {
     statusOffline: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;
+    /** `dsh_new_session` succeeded in a workspace the pet named; `{workspace}` is its path. */
+    newSessionDoneIn: string;
+    /** `dsh_new_session` answered without a workspace, so the request cannot be confirmed. */
+    newSessionUnverified: string;
+    /** `dsh_new_session` landed elsewhere than the path the pet asked for. */
+    newSessionMismatch: string;
+    /** `dsh_workspaces` listed the projects; `{list}` is one line per project. */
+    workspacesDone: string;
+    /** `dsh_workspaces` found none. */
+    workspacesEmpty: string;
+    /** `dsh_workspaces` could not read them; `{reason}` says why. */
+    workspacesFailed: string;
     /** `dsh_new_session` failed; `{reason}` is DSH's own wording. */
     newSessionFailed: string;
   };

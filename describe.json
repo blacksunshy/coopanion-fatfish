@@ -50,7 +50,28 @@
     },
     {
       "name": "dsh_new_session",
-      "description": "Start a new DeepSeek Harness conversation and point this pet at it. Use it when the person asks for a new session, or when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with \"no conversation is open on the DSH side\". The receipt names the new session; words you hand over afterwards go there.",
+      "description": "Start a new DeepSeek Harness conversation and point this pet at it. Use it when the person asks for a new session, when DSH has no open conversation — for example after they archived them all, which makes dsh_send refuse with \"no conversation is open on the DSH side\" — or when the work belongs in a different project. Pass `workspace` with a path or an id from dsh_workspaces to put the conversation in that project; without it the Host uses the current conversation's workspace. The receipt names the new session and the workspace it landed in; words you hand over afterwards go there.",
+      "tags": [
+        "speak"
+      ],
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Path or id of the DSH workspace to start the conversation in. Omit to stay in the current one."
+          }
+        }
+      },
+      "summary": {
+        "zh": "在 DSH 侧新建一个会话（可指定工作区），并把桌宠接过去。",
+        "en": "Start a new DSH conversation, optionally in a named workspace, and point this pet at it."
+      }
+    },
+    {
+      "name": "dsh_workspaces",
+      "description": "List the DeepSeek Harness projects (workspaces) this pet may start a conversation in. Each row carries a path, an id and how many conversations are open in it; pass either the path or the id as `workspace` to dsh_new_session. Ask for it before moving work to another project, so the name you pass is one DSH actually has.",
       "tags": [
         "speak"
       ],
@@ -59,8 +80,8 @@
         "properties": {}
       },
       "summary": {
-        "zh": "在 DSH 侧新建一个会话，并把桌宠接过去。",
-        "en": "Start a new DSH conversation and point this pet at it."
+        "zh": "列出 DSH 的工作区（路径 / id / 打开的会话数）。",
+        "en": "List the DSH workspaces a new conversation may target."
       }
     },
     {

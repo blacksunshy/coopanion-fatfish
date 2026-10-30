@@ -89,6 +89,12 @@ export const zh: FatfishText = {
     statusConnected: '已连接（会话 {session}，模型 {model}）',
     statusOffline: '未连接',
     newSessionDone: '已在 DSH 新建会话 {session}，之后的话都会送到那里。',
+    newSessionDoneIn: '已在 DSH 新建会话 {session}（工作区 {workspace}），之后的话都会送到那里。',
+    newSessionUnverified: '会话 {session} 建好了，但这个版本的 DSH 插件不回报工作区，无法确认它建在你指定的地方。',
+    newSessionMismatch: '会话 {session} 建在了 {workspace}，不是你要的 {requested}——DSH 侧插件可能太旧。',
+    workspacesDone: 'DSH 里的工作区：\n{list}',
+    workspacesEmpty: 'DSH 里还没有工作区。',
+    workspacesFailed: '没能读到工作区列表：{reason}',
     newSessionFailed: '没能新建会话：{reason}',
   },
 };

@@ -161,6 +161,45 @@ describe('a line the bot hands to DSH', () => {
   });
 });
 
+describe('a conversation the bot starts in a named workspace', () => {
+  it('carries the workspace request and reports where it landed', async () => {
+    const { world, fromPet } = await withHost((socket, frame) => {
+      if (frame.t === 'new') socket.send(JSON.stringify({ t: 'created', id: frame.id, session: 'session-10', workspace: '/w/fish' }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_new_session')!;
+    const receipt = await tool.handler({ workspace: '/w/fish' }, {} as never);
+    expect(fromPet.find((f) => f.t === 'new')).toMatchObject({ workspace: '/w/fish' });
+    expect(receipt).toBe('已在 DSH 新建会话 session-10（工作区 /w/fish），之后的话都会送到那里。');
+    expect(world.state().session).toBe('session-10');
+  });
+
+  it('says the workspace could not be confirmed when the Host does not report it', async () => {
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'new') socket.send(JSON.stringify({ t: 'created', id: frame.id, session: 'session-10' }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_new_session')!;
+    expect(await tool.handler({ workspace: '/w/fish' }, {} as never))
+      .toBe('会话 session-10 建好了，但这个版本的 DSH 插件不回报工作区，无法确认它建在你指定的地方。');
+  });
+
+  it('lists the workspaces the Host offers', async () => {
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-workspaces') return;
+      socket.send(JSON.stringify({
+        t: 'workspace-list',
+        workspaces: [
+          { id: 'ws-fish', path: '/w/fish', sessions: 2, owner: true },
+          { id: 'ws-other', path: '/w/other', sessions: 0, owner: false },
+        ],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_workspaces')!;
+    const receipt = await tool.handler({}, {} as never);
+    expect(receipt).toContain('/w/fish  id=ws-fish  open=2  (current)');
+    expect(receipt).toContain('/w/other  id=ws-other  open=0');
+  });
+});
+
 describe('what the bot reads about DSH', () => {
   it('says which conversation it is bridged to', async () => {
     const { world } = await withHost();

@@ -1,8 +1,8 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.6.13",
+  "version": "0.6.14",
   "type": "module",
-  "description": "DSH 对话/语音。新建会话需 connector-dsh ≥0.2.12（仅GitHub）。通知默认只报结果省 token。 / DSH chat/voices. New-session needs connector-dsh >=0.2.12. Notices default to results only.",
+  "description": "DSH 对话/语音。新建会话需 connector-dsh ≥0.2.12、指定工作区 ≥0.2.14（仅GitHub）。通知默认只报结果。 / DSH chat/voice. New session: connector-dsh >=0.2.12, workspace pick >=0.2.14. Notices default to results only.",
   "author": "blacksunshy",
   "license": "AGPL-3.0-or-later",
   "repository": {

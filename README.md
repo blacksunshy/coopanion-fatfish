@@ -6,7 +6,7 @@ Coopanion 桌宠的 Cortico World 扩展。一句话：**和 DeepSeek Harness（
 
 - **让 DSH 干活**：把桌宠接上 DeepSeek Harness（DSH）——它听见你说话就替你转交给 DSH，DSH 干的活、写的代码、调的工具、等的批准，都变成消息回到对话里；没有回执的台词才需要宠物递话，重启后不会重复转交。
 - **回复有声音**：内置 19 个 Edge TTS 音色（晓晓、云希、东北晓北、陕西晓妮、粤语曉曼、台湾曉臻、Aria、Jenny 等），另有一排「语音包」预设——温柔女声、活泼少女、播音腔、东北/陕西口音、粤语、台湾腔、English 各一档，选一个就把音色、语速、音高、音量整套换好；也可以选「自定义」自己调音色、语速、音高、音量。宠物回复你的同时读出声，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
-- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
+- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12，`dsh_new_session` 指定工作区与 `dsh_workspaces` 要求 ≥ 0.2.14**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
 
 两半共用一次事件扫描，各自记各自的进度，都只读启动之后的新消息：语音从启动后的第一条开始（重启不重播），桥接也只转发启动之后你说的话（重启不补发旧的）；启动时还没连上 DSH 的那几句会先排队，连上后补发。
 
@@ -54,7 +54,7 @@ Coopanion WebUI → Fatfish 面板显示桥接状态：地址、当前会话、�
 
 > ⚠️ **只切 tab 不说话时，DSH 不会通知插件**：`agent/created` 只在某个 tab 首次打开时发一次，`session/event` 只有真有活动才有；`.dsh` 的持久化里也没有"当前会话"字段。所以桌宠无法实时感知静默导航——想立刻对准，点「刷新测试」或「选择会话」；已经固定（pin）的会话不跟着跑本来就是设计如此。
 
-> 会话选择器与解除固定需要 DSH 侧 `coopanion-connector-dsh` **≥ 0.2.11**；低于它的版本没有 `list-sessions` / `unpin` 帧，本版会退化成"读列表超时"和"解除固定只清本地"。「新建会话」（面板按钮与 `dsh_new_session`）需要 **≥ 0.2.12**，低于它没有 `new` / `created` 帧，会连上但一直等不到会话。该插件只在 GitHub 分发（`https://github.com/blacksunshy/coopanion-connector-dsh`），**未发布到 npm**。
+> 会话选择器与解除固定需要 DSH 侧 `coopanion-connector-dsh` **≥ 0.2.11**；低于它的版本没有 `list-sessions` / `unpin` 帧，本版会退化成"读列表超时"和"解除固定只清本地"。「新建会话」（面板按钮与 `dsh_new_session`）需要 **≥ 0.2.12**，低于它没有 `new` / `created` 帧，会连上但一直等不到会话；新建时**指定工作区**与 `dsh_workspaces` 列表需要 **≥ 0.2.14**，更低的版本会静默忽略 `workspace`，本版会如实报「无法确认落在指定工作区」而不是假装成功。该插件只在 GitHub 分发（`https://github.com/blacksunshy/coopanion-connector-dsh`），**未发布到 npm**。
 
 > ⚠️ **CLI 模式（`dsh web --no-open`）不建议用固定会话**：CLI 模式的会话不持久化，重启 `dsh web` 后所有会话都会丢，固定的 session id 也就失效了。固定会话功能**仅在 DSH 桌面版（Electron）里可靠**，桌面版会话跨重启保留。
 

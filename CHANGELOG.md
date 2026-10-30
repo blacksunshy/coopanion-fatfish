@@ -1,5 +1,14 @@
 # 更新说明
 
+## 0.6.14 — 端口发现修盲区、面板显示真实地址、新建会话可指定工作区（致谢 @allisera）
+
+合入社区三个 PR（[#6](https://github.com/blacksunshy/coopanion-fatfish/pull/6) / [#7](https://github.com/blacksunshy/coopanion-fatfish/pull/7) / [#8](https://github.com/blacksunshy/coopanion-fatfish/pull/8)）与 DSH 侧 issue [#9](https://github.com/blacksunshy/coopanion-fatfish/issues/9) 的配套修复：
+
+- **端口发现不再漏扫低段动态端口（PR #6）**：原扫描写死 49152–65535，但有些机器 `netsh int ipv4 show dynamicport tcp` 的范围从 1024 开始（实测 DSH 落在 13141，旧扫描永远找不到）。现在 Windows 上运行时读 netsh 的实际范围（按数字解析，不受系统语言影响），读不到回退 1024–65535，结果缓存一次
+- **面板与 `fatfish-bridge.json` 显示实际拨号的地址（PR #7）**：`start()` 拨号后同步 `rediscover(true)` 会清掉发现缓存，面板曾因此显示配置端口（19387）而非真正连上的端口（13141）。现在在拨号瞬间记下目标，连上后记录的就是真实地址
+- **新建会话可指定工作区 + 新工具 `dsh_workspaces`（PR #8，需 connector ≥ 0.2.14）**：`dsh_new_session` 增加可选 `workspace` 参数（id 或路径），Host 回执带实际落点——旧 Host 静默忽略时如实报「无法确认落在指定工作区」而不是假装成功；`dsh_workspaces` 列出 DSH 各项目的 id / 路径 / 打开的会话数。connector 0.2.14 起 Host 侧匹配不上指定工作区会直接拒回并列出可用路径，绝不静默落到别处
+- **DSH 侧 issue #9 的根因在 connector，已随 0.2.14 修复**：cordis 里未 inject 的服务属性是会抛错的访问器，`apply()` 开头的探测把插件整个炸掉、路由全灭；建议两边一起升
+
 ## 0.6.13 — DSH 通知默认只报结果，不再逐条唤醒（致谢 @minekooooo）
 
 - **新增 `notify` 三档**：
