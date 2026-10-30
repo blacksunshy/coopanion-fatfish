@@ -8,8 +8,8 @@
  * the config offers the short list as choices and accepts a hand-typed one.
  *
  * The voice half also names the engine behind it (`edge`, the built-in service and the default, or
- * `http`, a server of the person's own). The engine keys are add-only: an install that never
- * touched them speaks through Edge exactly as before.
+ * `http`, a server of the person's own) and, optionally, a sentence pipeline. Both are add-only
+ * and off unless switched on: an install that never touched them speaks exactly as before.
  */
 import type { Language } from 'cortico/core/language.ts';
 import type { ConfigGroup } from 'cortico/core/config-schema.ts';
@@ -99,6 +99,17 @@ export const RELAY_MAX = 1200;
 export const SPEED_RANGE = { min: 0.25, max: 4 } as const;
 export const TIMEOUT_RANGE = { min: 1_000, max: 120_000 } as const;
 
+/** The bounds of the pipeline's whole-text threshold. */
+export const PIPELINE_CHARS_RANGE = { min: 8, max: 200 } as const;
+
+/** The pipeline settings as the World consumes them. */
+export interface SentencePipelineConfig {
+  /** Off by default: the old single-clip behaviour, unchanged. */
+  enabled: boolean;
+  /** A line longer than this is synthesised whole instead of split; `40` by default. */
+  maxChars: number;
+}
+
 export interface FatfishConfigSection {
   [key: string]: unknown;
   /** The whole pack; the framework reads this one to decide whether the World mounts. */
@@ -137,6 +148,13 @@ export interface FatfishConfigSection {
   /** How long one http attempt may take, in milliseconds, before it counts as failed. */
   timeoutMs: number;
   /**
+   * Splits a short line at sentence punctuation and synthesises the next sentence while the
+   * current one plays. Off by default; on, a line above `sentencePipelineMaxChars` stays whole.
+   */
+  sentencePipelineEnabled: boolean;
+  /** The whole-text threshold: a line longer than this is one clip, not a split line. */
+  sentencePipelineMaxChars: number;
+  /**
    * A ready-made voice pack, or `custom` to use the four settings below. A pack is a voice plus
    * the pace, tone and loudness that suit it; picking one overrides those settings.
    */
@@ -167,6 +185,8 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   speed: 1,
   fallbackEdge: true,
   timeoutMs: 20_000,
+  sentencePipelineEnabled: false,
+  sentencePipelineMaxChars: 40,
   preset: CUSTOM_PRESET,
   voice: DEFAULT_VOICE,
   rate: '+0%',
@@ -224,6 +244,18 @@ export function resolveEngine(cfg: Partial<FatfishConfigSection>): TtsEngineConf
   };
 }
 
+/**
+ * Turns the pipeline keys into what the World consumes. It is off unless explicitly switched on,
+ * so an old config and a fresh install speak exactly as they did before. `maxChars` is only read
+ * when the pipeline is on, and a missing or nonsensical value falls back to 40.
+ */
+export function resolvePipeline(cfg: Partial<FatfishConfigSection>): SentencePipelineConfig {
+  return {
+    enabled: cfg.sentencePipelineEnabled === true,
+    maxChars: Math.round(numberIn(cfg.sentencePipelineMaxChars, 40, PIPELINE_CHARS_RANGE.min, PIPELINE_CHARS_RANGE.max)),
+  };
+}
+
 /** The WebUI's config groups for this World; keys are paths inside `worlds.fatfish`. */
 export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
   const t = fatfishText(language).config;
@@ -276,6 +308,20 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
             description: t.timeoutMsHint,
             minimum: TIMEOUT_RANGE.min,
             maximum: TIMEOUT_RANGE.max,
+            'x-hot': true,
+          },
+          [at('sentencePipelineEnabled')]: {
+            type: 'boolean',
+            title: t.sentencePipeline,
+            description: t.sentencePipelineHint,
+            'x-hot': true,
+          },
+          [at('sentencePipelineMaxChars')]: {
+            type: 'number',
+            title: t.sentencePipelineMaxChars,
+            description: t.sentencePipelineMaxCharsHint,
+            minimum: PIPELINE_CHARS_RANGE.min,
+            maximum: PIPELINE_CHARS_RANGE.max,
             'x-hot': true,
           },
           [at('preset')]: {

@@ -106,6 +106,10 @@ export interface FatfishText {
     fallbackEdgeHint: string;
     timeoutMs: string;
     timeoutMsHint: string;
+    sentencePipeline: string;
+    sentencePipelineHint: string;
+    sentencePipelineMaxChars: string;
+    sentencePipelineMaxCharsHint: string;
     preset: string;
     presetHint: string;
     /** The row that means "use the four settings below". */

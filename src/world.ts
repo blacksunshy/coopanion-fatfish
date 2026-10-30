@@ -33,13 +33,15 @@ import {
   SEND_MAX,
   fatfishConfigGroups,
   resolveEngine,
+  resolvePipeline,
   resolveSpeak,
   type FatfishConfigSection,
   type NotifyMode,
+  type SentencePipelineConfig,
 } from './config.ts';
 import { discoverBridge } from './discover.ts';
 import { fatfishText, type FatfishText } from './i18n/index.ts';
-import { Speaker, type SpeakOptions, type TtsEngineConfig } from './speaker.ts';
+import { Speaker, splitSentences, type PreparedClip, type SpeakOptions, type TtsEngineConfig } from './speaker.ts';
 
 /** The event type a person's line carries; the pet World owns the type, this World only reads it. */
 const PERSON_EVENT = 'desktop-pet.message';
@@ -301,6 +303,11 @@ export class FatfishWorld implements World {
   /** The synthesis engine the config names, with the Edge defaults for any key it leaves out. */
   private get engine(): TtsEngineConfig {
     return resolveEngine(this.opts.cfg);
+  }
+
+  /** Whether a line is split into a sentence pipeline, and where the whole-text threshold sits. */
+  private get pipeline(): SentencePipelineConfig {
+    return resolvePipeline(this.opts.cfg);
   }
 
   async start(host: WorldHost): Promise<void> {
@@ -683,12 +690,52 @@ export class FatfishWorld implements World {
     if (!host || this.opts.cfg.ttsEnabled === false) return;
     this.speaking = true;
     try {
-      const spoken = await this.speaker.speak(line, this.voice, (text) => host.log.info(text), this.engine);
+      const spoken = this.pipeline.enabled
+        ? await this.saySentences(line, this.pipeline.maxChars, host)
+        : await this.speaker.speak(line, this.voice, (text) => host.log.info(text), this.engine);
       host.log.info(spoken ? 'fatfish played' : 'fatfish skipped (cooldown/off-platform)');
       this.failed = !spoken;
     } finally {
       this.speaking = false;
     }
+  }
+
+  /**
+   * One line as several clips, the next sentence synthesised while the current one plays: the
+   * first sound no longer waits for the whole line, and the seam between two sentences costs only
+   * the remaining synthesis time. A line above `maxChars` stays whole instead (late first sound,
+   * no seam at all). A hush bumps `speechEpoch`, which drops the rest and the prepared clip.
+   */
+  private async saySentences(line: string, maxChars: number, host: WorldHost): Promise<boolean> {
+    const log = (text: string): void => host.log.info(text);
+    const epoch = this.speechEpoch;
+    const trimmed = String(line ?? '').trim();
+    if (!trimmed) return false;
+    const sentences = trimmed.length > maxChars ? [trimmed] : splitSentences(trimmed);
+    if (sentences.length <= 1) {
+      // Nothing to pipeline: the whole line is one clip, exactly as without the setting.
+      return this.speaker.speak(sentences[0] ?? trimmed, this.voice, log, this.engine);
+    }
+    let next: Promise<PreparedClip | null> = this.speaker.prepare(sentences[0], this.voice, log, this.engine);
+    for (let i = 0; i < sentences.length; i++) {
+      const prepared = await next;
+      if (epoch !== this.speechEpoch) {
+        // A hush landed while this sentence was being synthesised: drop it with the rest.
+        if (prepared) await this.speaker.discard(prepared);
+        return true;
+      }
+      if (!prepared) return false;
+      // The next sentence starts synthesising now, before this one begins to play.
+      next = i + 1 < sentences.length
+        ? this.speaker.prepare(sentences[i + 1], this.voice, log, this.engine).catch(() => null)
+        : Promise.resolve(null);
+      if (!(await this.speaker.playPrepared(prepared, log))) {
+        const unusable = await next;
+        if (unusable) await this.speaker.discard(unusable);
+        return false;
+      }
+    }
+    return true;
   }
 
   tools(): ToolDef[] {
