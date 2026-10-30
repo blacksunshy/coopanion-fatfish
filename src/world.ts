@@ -198,6 +198,11 @@ export class FatfishWorld implements World {
     return this.discoveredUrl ?? this.configuredUrl;
   }
 
+  /** Discovery runs unless switched off in the config or by the embedding app. */
+  private get discoverOn(): boolean {
+    return this.opts.discover !== false && this.opts.cfg.discover !== false;
+  }
+
   /** The configured URL with only its port replaced; host, path and query stay as the person set them. */
   private urlAtPort(port: number): string {
     try {
@@ -339,7 +344,7 @@ export class FatfishWorld implements World {
                 }
               });
             }
-          } else if (this.opts.discover !== false) {
+          } else if (this.discoverOn) {
             void this.rediscover();
           }
         },
@@ -350,10 +355,12 @@ export class FatfishWorld implements World {
       });
       this.client = client;
       client.start();
-      // The configured URL may already name a port DSH has left. Look while the first dial runs,
-      // rather than wait for it to fail and then for a sweep: that wait is what made a restarted
-      // DSH unreachable for the better part of a minute.
-      if (this.opts.discover !== false) void this.rediscover(true);
+      // The configured URL may already name a port DSH has left. A fresh cache dial runs first, and
+      // its failure sweeps through onState within milliseconds of the refused connect — so the
+      // unconditional startup sweep is only needed when there is nothing recent to try. Sweeping on
+      // every start is thousands of loopback connects in about two seconds, enough for a VPN filter
+      // driver that hooks loopback to drop its own kernel (0cloud report on the market thread).
+      if (this.discoverOn && !recalled) void this.rediscover(true);
     }
     this.scanTimer = setInterval(() => void this.scan(), SCAN_MS);
     this.scanTimer.unref?.();

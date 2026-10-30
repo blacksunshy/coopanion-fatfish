@@ -32,6 +32,7 @@ pnpm install
 | --- | --- | --- |
 | `bridgeEnabled` | 启用 DSH 桥接 | `true` |
 | `url` | Host 半区的 WebSocket 地址 | `ws://127.0.0.1:19387/coopanion/pet` |
+| `discover` | 地址连不上时自动扫描本机端口找 DSH（VPN/安全软件误报时可关掉，改为手填固定端口——配合把 DSH 的 `webserver.port` 钉住） | `true` |
 | `relayPerson` | 把你说的话转交给 DSH | `false` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `notify` | DSH 干活时哪些进度唤醒桌宠：`results` 只报每轮结果与待批准/回答，`all` 每个事件都唤醒，`off` 只发送不接收 | `results` |

@@ -1,5 +1,17 @@
 # 更新说明
 
+## 0.6.15 — 启动不再无条件全端口扫描；自动发现可关闭（VPN 兼容）
+
+市场评论里 @Barlthor 报告：使用本扩展会与 VPN（0cloud）冲突，表现为 VPN 内核反复断开。
+
+- **根因（最可能）**：本扩展启动时**无条件**对整个动态端口范围做一轮 TCP 扫描找 DSH（最多 6 万+ 个连接、约 2 秒、并发 64），连不上 DSH 时还会每 3~30 秒重扫。VPN 客户端若用 TUN / LSP / WFP 之类方式钩住回环或全局流量，这批连接会全部穿过它的内核——0cloud 的内核被打到反复重启，重启期间 DSH 还是连不上，桌宠再扫，形成循环
+- **修复 1：缓存优先，不再每次启动都扫**。上次连上的端口本来就记在 `fatfish-bridge.json`（7 天内有效），但旧版启动时照样强制全扫；现在启动先拨缓存端口，拨不上（毫秒级失败）才开始扫描——缓存有效时整轮扫描完全不发生
+- **修复 2：自动发现做成配置项 `discover`（默认开）**。被 VPN/安全软件误报的用户可以关掉它，改为在「地址」里手填固定端口——配合把 DSH 的 `webserver.port` 在 profile 里钉住（见 DSH 侧 README），彻底没有任何扫描行为
+- 新增回归测试：缓存新鲜时启动不扫（哨兵端口 2.6 秒内零连接）、无缓存时启动照常扫
+- 语音（Edge TTS）不受影响：它只做出站公网连接，不会反向影响 VPN
+
+本地没有 0cloud 环境，无法直接复现该冲突；升级后若仍复现，请带上插件版本、VPN 的代理模式（TUN/系统代理/虚拟网卡）与断开时机反馈。
+
 ## 0.6.14 — 端口发现修盲区、面板显示真实地址、新建会话可指定工作区（致谢 @allisera）
 
 合入社区三个 PR（[#6](https://github.com/blacksunshy/coopanion-fatfish/pull/6) / [#7](https://github.com/blacksunshy/coopanion-fatfish/pull/7) / [#8](https://github.com/blacksunshy/coopanion-fatfish/pull/8)）与 DSH 侧 issue [#9](https://github.com/blacksunshy/coopanion-fatfish/issues/9) 的配套修复：

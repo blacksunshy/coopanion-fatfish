@@ -74,6 +74,8 @@ export interface FatfishText {
     bridgeEnabledHint: string;
     url: string;
     urlHint: string;
+    discover: string;
+    discoverHint: string;
     relayPerson: string;
     relayPersonHint: string;
     relayPet: string;

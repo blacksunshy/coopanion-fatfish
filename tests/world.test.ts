@@ -427,4 +427,58 @@ describe('the remembered Host port', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  /** A silent TCP listener; anything that connects to it is a sweep in progress. */
+  async function sentinel(): Promise<{ port: number; probed: () => boolean; close: () => Promise<void> }> {
+    let touched = false;
+    const server = createServer();
+    server.on('connection', () => { touched = true; });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', () => done()));
+    const { port } = server.address() as AddressInfo;
+    return {
+      port,
+      probed: () => touched,
+      close: async () => {
+        await new Promise<void>((done) => server.close(() => done()));
+      },
+    };
+  }
+
+  it('skips the startup sweep while a fresh cache dial answers', async () => {
+    // Regression for the 0cloud report: the sweep's thousands of loopback connects took a VPN
+    // kernel down. A fresh cache makes the first dial the whole story — no sweep at all.
+    const dir = mkdtempSync(join(tmpdir(), 'fatfish-cache-'));
+    const host = await hostOnFreePort();
+    const probe = await sentinel();
+    try {
+      writeFileSync(join(dir, 'fatfish-bridge.json'), JSON.stringify({ lastGoodPort: host.port, seenAt: Date.now() }));
+      const world = new FatfishWorld({ cfg: { url: 'ws://127.0.0.1:1/coopanion/pet' }, stateDir: dir } as never);
+      await world.start(new FakeHost() as never);
+      await until(() => world.state().connected === true);
+      expect(world.state().url).toBe(`ws://127.0.0.1:${host.port}/coopanion/pet`);
+      // A sweep crosses the whole ephemeral range in about 2s, so this window covers a probe of
+      // the sentinel wherever the range puts it.
+      await new Promise((done) => setTimeout(done, 2_600));
+      expect(probe.probed()).toBe(false);
+      await world.stop();
+    } finally {
+      await host.close();
+      await probe.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 8_000);
+
+  it('still sweeps at startup when nothing is remembered', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fatfish-cache-'));
+    const probe = await sentinel();
+    try {
+      const world = new FatfishWorld({ cfg: { url: 'ws://127.0.0.1:1/coopanion/pet' }, stateDir: dir } as never);
+      await world.start(new FakeHost() as never);
+      await until(probe.probed, 5_000);
+      await world.stop();
+    } finally {
+      await probe.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 8_000);
 });

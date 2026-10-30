@@ -84,6 +84,12 @@ export interface FatfishConfigSection {
   bridgeEnabled: boolean;
   /** The Host half's WebSocket URL. */
   url: string;
+  /**
+   * Auto-find the Host on loopback when the configured URL does not answer. Off it means the
+   * configured URL (or the remembered port) is the only thing tried — for VPN clients whose
+   * filter driver treats the discovery sweep's loopback connects as an attack.
+   */
+  discover: boolean;
   /** Relay the person's own lines to DSH, so the pet's other mouth hears them too. */
   relayPerson: boolean;
   /** Relay what the pet says and does to DSH. */
@@ -117,6 +123,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   enabled: true,
   bridgeEnabled: true,
   url: DEFAULT_URL,
+  discover: true,
   relayPerson: false,
   relayPet: false,
   notify: 'results',
@@ -171,6 +178,7 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
         properties: {
           [at('bridgeEnabled')]: { type: 'boolean', title: t.bridgeEnabled, description: t.bridgeEnabledHint, 'x-hot': false },
           [at('url')]: { type: 'string', title: t.url, description: t.urlHint, 'x-hot': false },
+          [at('discover')]: { type: 'boolean', title: t.discover, description: t.discoverHint, 'x-hot': false },
           [at('relayPerson')]: { type: 'boolean', title: t.relayPerson, description: t.relayPersonHint, 'x-hot': false },
           [at('relayPet')]: { type: 'boolean', title: t.relayPet, description: t.relayPetHint, 'x-hot': false },
           [at('notify')]: { type: 'string', title: t.notify, description: t.notifyHint, 'x-options': NOTIFY_OPTIONS_KIND, 'x-hot': true },

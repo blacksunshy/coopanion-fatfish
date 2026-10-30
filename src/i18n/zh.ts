@@ -52,6 +52,8 @@ export const zh: FatfishText = {
     bridgeEnabledHint: '连上 DSH 侧的插件，收发它的消息；关闭后只保留语音朗读',
     url: '地址',
     urlHint: 'DSH 侧插件的 WebSocket 地址，形如 ws://127.0.0.1:19387/coopanion/pet',
+    discover: '自动寻找地址',
+    discoverHint: '地址连不上时扫描本机端口找 DSH。VPN/安全软件误报时可以关掉，改为在上面的地址里手填固定端口（需把 DSH 的 webserver.port 钉住）',
     relayPerson: '转发人物的话',
     relayPersonHint: '把你在桌宠里说的、打字的与语音转写的话一并告诉 DSH',
     relayPet: '转发桌宠的话',

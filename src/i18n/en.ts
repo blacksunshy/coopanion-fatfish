@@ -52,6 +52,8 @@ export const en: FatfishText = {
     bridgeEnabledHint: 'Connect to the DSH Host plugin and exchange its messages; the voice half keeps working on its own',
     url: 'Address',
     urlHint: "The WebSocket URL of the DSH Host plugin, such as ws://127.0.0.1:19387/coopanion/pet",
+    discover: 'Find the address automatically',
+    discoverHint: 'Sweep local ports for DSH when the address does not answer. Turn off if a VPN or security suite flags the sweep, then hand-type a fixed port above (pin DSH\'s webserver.port first)',
     relayPerson: 'Relay the person',
     relayPersonHint: 'Tell DSH what the person says to you, types, and has transcribed from voice',
     relayPet: 'Relay the pet',
