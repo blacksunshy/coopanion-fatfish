@@ -36,6 +36,7 @@ pnpm install
 | `relayPerson` | 把你说的话转交给 DSH | `false` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
 | `notify` | DSH 干活时哪些进度唤醒桌宠：`results` 只报每轮结果与待批准/回答，`all` 每个事件都唤醒，`off` 只发送不接收 | `results` |
+| `askRemind` | 弹选择框时让桌宠念固定短句「请选择」（0/10/60/120 秒各一次，选中即停），不叫醒桌面 AI；需 `coopanion-connector-dsh` ≥ 0.2.17 | `false` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
 | `engine` | 朗读引擎：`edge`（内置 Edge TTS）或 `http`（你自己的语音服务） | `edge` |
 | `httpUrl` | `engine=http` 时 POST 的目标地址，返回 `audio/wav` 或 `audio/mpeg` | 空 |
