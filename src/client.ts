@@ -21,7 +21,9 @@ export type HostFrame =
   | { t: 'reply'; turn: number; text: string }
   | { t: 'tool'; name: string; detail: string }
   | { t: 'approval'; name: string; reason: string }
-  | { t: 'question'; text: string }
+  | { t: 'question'; text: string; callId?: string }
+  /** The question above was answered, skipped or timed out; stop any reminder. */
+  | { t: 'question-end'; callId: string }
   | { t: 'error'; text: string }
   | { t: 'accepted'; id: string }
   | { t: 'refused'; id: string; reason: string }
@@ -539,7 +541,13 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'question': {
       const text = str('text');
-      return text === null ? null : { t: 'question', text };
+      if (text === null) return null;
+      const callId = str('callId');
+      return callId === null ? { t: 'question', text } : { t: 'question', text, callId };
+    }
+    case 'question-end': {
+      const callId = str('callId');
+      return callId === null ? null : { t: 'question-end', callId };
     }
     case 'error': {
       const text = str('text');
