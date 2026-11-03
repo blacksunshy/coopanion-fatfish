@@ -482,3 +482,50 @@ describe('the remembered Host port', () => {
     }
   }, 8_000);
 });
+
+/** The pending reminder timers of one World, by count. */
+const remindTimers = (world: FatfishWorld): number =>
+  (world as unknown as { askRemindTimers: NodeJS.Timeout[] }).askRemindTimers.length;
+
+describe('a question the assistant asks (askRemind)', () => {
+  it('is spoken as a fixed line and never wakes the bot', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'question', text: '要用哪个分支？', callId: 'c1' }));
+    }, { askRemind: true, ttsEnabled: false });
+    await until(() => remindTimers(world) === 4);
+    // The fixed reminder is spoken on a timer; the bot itself hears nothing.
+    await new Promise((done) => setTimeout(done, 120));
+    expect(notices(host)).toHaveLength(0);
+  });
+
+  it('stops the reminder once the answer comes back', async () => {
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'question', text: '要用哪个分支？', callId: 'c1' }));
+      setTimeout(() => socket.send(JSON.stringify({ t: 'question-end', callId: 'c1' })), 60);
+    }, { askRemind: true, ttsEnabled: false });
+    await until(() => remindTimers(world) === 4);
+    await until(() => remindTimers(world) === 0);
+  });
+
+  it('stops the reminder when the next turn starts', async () => {
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'question', text: '要用哪个分支？', callId: 'c1' }));
+      setTimeout(() => socket.send(JSON.stringify({ t: 'turn-start', turn: 2 })), 60);
+    }, { askRemind: true, ttsEnabled: false });
+    await until(() => remindTimers(world) === 4);
+    await until(() => remindTimers(world) === 0);
+  });
+
+  it('is an ordinary notice when askRemind is off', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'question', text: '要用哪个分支？', callId: 'c1' }));
+    });
+    await until(() => notices(host).length >= 1);
+    expect(notices(host).join('\n')).toContain('正在等你回答：要用哪个分支？');
+    expect(remindTimers(world)).toBe(0);
+  });
+});

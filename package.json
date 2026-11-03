@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.6.16",
+  "version": "0.6.17",
   "type": "module",
   "description": "DSH 对话/语音；可选自建 HTTP 语音引擎与分句流水线。VPN 用户可关自动发现。新建会话需 connector-dsh ≥0.2.12。 / DSH chat/voice; optional HTTP TTS engine + sentence pipeline. New session needs connector-dsh >=0.2.12.",
   "author": "blacksunshy",
