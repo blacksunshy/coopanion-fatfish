@@ -535,7 +535,7 @@ export class FatfishWorld implements World {
   /** The configured notice level; a missing or unknown value keeps the default, `results`. */
   private get notifyMode(): NotifyMode {
     const mode = this.opts.cfg.notify;
-    return mode === 'all' || mode === 'off' ? mode : 'results';
+    return mode === 'decisions' || mode === 'all' || mode === 'off' ? mode : 'results';
   }
 
   /** One notice from DSH, turned into an event for the bot to judge. */
@@ -555,6 +555,7 @@ export class FatfishWorld implements World {
     const mode = this.notifyMode;
     if (mode === 'all') this.notifyAll(frame);
     else if (mode === 'results') this.notifyResult(frame);
+    else if (mode === 'decisions') this.notifyDecisions(frame);
   }
 
   /** `all`: one notice per frame, the behaviour before the `notify` setting existed. */
@@ -630,6 +631,37 @@ export class FatfishWorld implements World {
     }
   }
 
+  /**
+   * `decisions`: only the frames that wait on the person — approvals, questions and errors break
+   * through; a turn boundary, a reply and a tool call are dropped out of hand. Nothing is counted,
+   * held or queued, so a finished turn never costs a wake even when its `turn-end` never arrives.
+   *
+   * `question-end` and the other non-notice frames stay silent here too (the reminder stop is
+   * handled before the mode is read). The `clearTurn` calls drop a turn held before a hot switch
+   * away from `results`; the hold timer itself re-checks the mode for a switch with no frames.
+   */
+  private notifyDecisions(frame: HostFrame): void {
+    switch (frame.t) {
+      case 'approval':
+        this.pushNotice(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
+        return;
+      case 'question':
+        this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'error':
+        this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
+        return;
+      case 'turn-start':
+      case 'turn-end':
+      case 'reply':
+      case 'tool':
+        this.clearTurn();
+        return;
+      default:
+        return;
+    }
+  }
+
   /** Opens a turn in `results` mode; a new turn replaces whatever the previous one left pending. */
   private beginTurn(turn: number): void {
     if (this.turnPending?.turn === turn) return;
@@ -660,6 +692,12 @@ export class FatfishWorld implements World {
     if (pending.timer) clearTimeout(pending.timer);
     const timer = setTimeout(() => {
       if (this.turnPending !== pending) return;
+      // A hot switch away from `results` retires the held turn: drop it silently instead of
+      // letting the fallback wake the bot with a turn notice the new level does not allow.
+      if (this.notifyMode !== 'results') {
+        this.clearTurn();
+        return;
+      }
       this.flushTurn(pending.turn, 'unknown', true);
     }, RESULT_HOLD_MS);
     timer.unref?.();

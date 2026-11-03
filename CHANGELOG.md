@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.18 — 未发布
+
+- **DSH 通知新增 `decisions` 档（默认仍 `results`）**：只穿透 `approval` / `question` / `error` 三类需要人拍板或出错的帧；`turn-start` / `turn-end` / 回复（连同工具调用）**不推、不缓存、不排队**，直接丢弃，普通回合不会叫醒桌宠。`askRemind` 仍独立于档位（它只念白、不叫醒）。不写这个新值时行为与 0.6.17 完全一致
+- 非法或缺失的 `notify` 值照旧回落 `results`；从 `results` 热切到 `decisions` 时会清掉尚未发出的回合缓存，兜底计时器不会在切换后补推一条
+- 测试：新增 3 条用例（`decisions` 只放行批准/回答/出错、且不留下回合缓存；`askRemind` 与 `decisions` 互不影响；从 `results` 热切到 `decisions` 且无新帧时，兜底计时器不补推）
+
 ## 0.6.17 — 已发布（GitHub Release）
 
 - **选择框提醒（`askRemind`，默认关）**：DSH 弹选择框（`ask_user_question`）时，桌宠直接念一句固定的「请选择」，0/10/60/120 秒各一次，用户选中/跳过/超时立即停；**不叫醒桌面 AI**——省 token，也避免和「DSH 通知」的提醒叠成两句。下一个回合开始（`turn-start` / `turn-end`）也会清掉剩余提醒，不会在已经继续干活之后还在催

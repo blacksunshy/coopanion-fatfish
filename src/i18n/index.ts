@@ -84,6 +84,8 @@ export interface FatfishText {
     notifyHint: string;
     /** The `results` row: one notice per finished turn plus what needs the person. */
     notifyResults: string;
+    /** The `decisions` row: only approvals, questions and errors; turns and replies are dropped. */
+    notifyDecisions: string;
     /** The `all` row: one wake per frame. */
     notifyAll: string;
     /** The `off` row: DSH never wakes the bot. */
