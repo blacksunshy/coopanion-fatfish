@@ -63,6 +63,8 @@ export const en: FatfishText = {
     notifyResults: 'Results and requests only (recommended)',
     notifyAll: 'Every event (each step wakes you)',
     notifyOff: 'Receive nothing (one-way)',
+    askRemind: 'Question reminder',
+    askRemindHint: 'When DSH shows a question, speak a fixed please-choose line (0 / 10 / 60 / 120 seconds, stopped once answered) instead of waking the bot, saving tokens. Off by default',
     voiceTitle: 'Voice',
     ttsEnabled: "Speak the pet's replies",
     ttsEnabledHint: 'Coo reads its bubble lines aloud; question choices are read too',

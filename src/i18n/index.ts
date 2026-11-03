@@ -88,6 +88,9 @@ export interface FatfishText {
     notifyAll: string;
     /** The `off` row: DSH never wakes the bot. */
     notifyOff: string;
+    /** The question reminder: a fixed line instead of a bot wake. */
+    askRemind: string;
+    askRemindHint: string;
     // the voice group
     voiceTitle: string;
     ttsEnabled: string;

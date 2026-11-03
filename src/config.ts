@@ -134,6 +134,12 @@ export interface FatfishConfigSection {
    * events that need the person; `all` is one wake per frame; `off` never wakes the bot.
    */
   notify: NotifyMode;
+  /**
+   * Reads a fixed "please choose" aloud while DSH waits on a question, instead of waking the bot
+   * for it: 0 s / 10 s / 60 s / 120 s, stopped by the matching `question-end` frame. Off by
+   * default; independent of `notify`, because it never wakes the bot.
+   */
+  askRemind: boolean;
   // ---- the voice half ----
   /** Reads the pet's replies aloud. */
   ttsEnabled: boolean;
@@ -179,6 +185,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   relayPerson: false,
   relayPet: false,
   notify: 'results',
+  askRemind: false,
   ttsEnabled: true,
   engine: 'edge',
   httpUrl: '',
@@ -274,6 +281,7 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
           [at('relayPerson')]: { type: 'boolean', title: t.relayPerson, description: t.relayPersonHint, 'x-hot': false },
           [at('relayPet')]: { type: 'boolean', title: t.relayPet, description: t.relayPetHint, 'x-hot': false },
           [at('notify')]: { type: 'string', title: t.notify, description: t.notifyHint, 'x-options': NOTIFY_OPTIONS_KIND, 'x-hot': true },
+          [at('askRemind')]: { type: 'boolean', title: t.askRemind, description: t.askRemindHint, 'x-hot': true },
         },
       },
     },

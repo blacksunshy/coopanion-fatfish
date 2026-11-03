@@ -63,6 +63,8 @@ export const zh: FatfishText = {
     notifyResults: '只报结果与待办（推荐）',
     notifyAll: '全部事件（每步都提醒）',
     notifyOff: '不接收（单向）',
+    askRemind: '选择框提醒（请选择）',
+    askRemindHint: 'DSH 弹选择框时只念一句固定的「请选择」，0/10/60/120 秒各一次、选中即停；不叫醒桌面 AI（省 token）。默认关闭',
     voiceTitle: '语音朗读',
     ttsEnabled: '朗读桌宠的话',
     ttsEnabledHint: 'Coo 在气泡里说话的同时读出声来；提问的选项一并读出',

@@ -69,6 +69,10 @@ const BRIDGE_CACHE = 'fatfish-bridge.json';
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 /** How long a `notify: results` reply waits for its turn-end before it is reported on its own. */
 const RESULT_HOLD_MS = 5_000;
+/** The fixed line a question reminder speaks; the wording is fixed, the question text is never read. */
+const ASK_REMIND_LINE = '请选择';
+/** When the reminder speaks, in milliseconds from the moment DSH shows the question. */
+const ASK_REMIND_OFFSETS_MS = [0, 10_000, 60_000, 120_000] as const;
 
 export interface FatfishWorldOptions {
   /** The live `worlds.fatfish` section. */
@@ -181,6 +185,8 @@ export class FatfishWorld implements World {
    * wait here until `turn-end` arrives, then leave as a single notice.
    */
   private turnPending: { turn: number; reply: string | null; tools: number; timer: NodeJS.Timeout | null } | null = null;
+  /** Timers of the pending question reminder; empty when no question is waiting. */
+  private askRemindTimers: NodeJS.Timeout[] = [];
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -390,6 +396,7 @@ export class FatfishWorld implements World {
     this.connected = false;
     this.pending.length = 0;
     this.clearTurn();
+    this.stopAskRemind();
     this.speechEpoch++;
     this.queuedSpeech = 0;
     await this.speaker.stop();
@@ -534,6 +541,17 @@ export class FatfishWorld implements World {
   /** One notice from DSH, turned into an event for the bot to judge. */
   private async onFrame(frame: HostFrame): Promise<void> {
     if (!this.host) return;
+    // The question reminder never wakes the bot, so it is decided before (and independently of)
+    // the notice level. `question-end` is the stop signal for an answer, a skip or a timeout.
+    if (frame.t === 'question' && this.opts.cfg.askRemind === true) {
+      this.startAskRemind();
+      return;
+    }
+    if (frame.t === 'question-end') {
+      this.stopAskRemind();
+      return;
+    }
+    if (frame.t === 'turn-start' || frame.t === 'turn-end') this.stopAskRemind();
     const mode = this.notifyMode;
     if (mode === 'all') this.notifyAll(frame);
     else if (mode === 'results') this.notifyResult(frame);
@@ -562,6 +580,8 @@ export class FatfishWorld implements World {
         return;
       case 'question':
         push(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'question-end':
         return;
       case 'error':
         push(`[DSH] 出错：${frame.text}`, { kind: 'error' });
@@ -597,6 +617,8 @@ export class FatfishWorld implements World {
         return;
       case 'question':
         this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'question-end':
         return;
       case 'error':
         this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
@@ -669,6 +691,26 @@ export class FatfishWorld implements World {
     const pending = this.turnPending;
     if (pending?.timer) clearTimeout(pending.timer);
     this.turnPending = null;
+  }
+
+  /**
+   * `askRemind`: a question from DSH is answered by a fixed line instead of a bot wake. The switch
+   * is independent of `notify` — a person who turned notices off still wants to hear the prompt.
+   * The lines go through `enqueue`, so a hush or a turned-off voice silences them like any other.
+   */
+  private startAskRemind(): void {
+    this.stopAskRemind();
+    for (const offset of ASK_REMIND_OFFSETS_MS) {
+      const timer = setTimeout(() => this.enqueue(ASK_REMIND_LINE), offset);
+      timer.unref?.();
+      this.askRemindTimers.push(timer);
+    }
+  }
+
+  /** Drops whatever is left of the reminder; `question-end`, a new turn and `stop()` all land here. */
+  private stopAskRemind(): void {
+    for (const timer of this.askRemindTimers) clearTimeout(timer);
+    this.askRemindTimers = [];
   }
 
   /** Hands one line to the speech chain; returns at once, the line speaks when its turn comes. */

@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.17 — 未发布
+
+- **选择框提醒（`askRemind`，默认关）**：DSH 弹选择框（`ask_user_question`）时，桌宠直接念一句固定的「请选择」，0/10/60/120 秒各一次，用户选中/跳过/超时立即停；**不叫醒桌面 AI**——省 token，也避免和「DSH 通知」的提醒叠成两句。
+- 开关在「DSH 桥接」组里，可随时关；关闭时行为与旧版完全一致。按住说话键（hush）或关掉朗读时，提醒同样不发声。
+- 配套：`coopanion-connector-dsh` ≥ 0.2.17（新增 `question` / `question-end` 帧）。旧 Host 不发帧时该开关无副作用；本扩展也忽略它不认识的帧。
+
 ## 0.6.16 — 朗读引擎可插拔（edge / http）+ 可选分句流水线（致谢 @ink1453）
 
 合入社区 PR [#11](https://github.com/blacksunshy/coopanion-fatfish/pull/11)（对应 issue [#10](https://github.com/blacksunshy/coopanion-fatfish/issues/10) 的建议 1 与建议 3）。两项都是 opt-in：**不写新键时，行为与 0.6.15 完全一致**。
