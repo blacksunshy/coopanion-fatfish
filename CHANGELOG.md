@@ -1,8 +1,8 @@
 # 更新说明
 
-## 0.6.18 — 未发布
+## 0.6.18 — 已发布（GitHub Release）
 
-- **DSH 通知新增 `decisions` 档（默认仍 `results`）**：只穿透 `approval` / `question` / `error` 三类需要人拍板或出错的帧；`turn-start` / `turn-end` / 回复（连同工具调用）**不推、不缓存、不排队**，直接丢弃，普通回合不会叫醒桌宠。`askRemind` 仍独立于档位（它只念白、不叫醒）。不写这个新值时行为与 0.6.17 完全一致
+- **DSH 通知新增 `decisions` 档（默认仍 `results`）**：只穿透 `approval` / `question` / `error` 三类需要人拍板或出错的帧；`turn-start` / `turn-end` / 回复（连同工具调用）**不推、不缓存、不排队**，直接丢弃，普通回合不会叫醒桌宠。`askRemind` 仍独立于档位（它只念白、不叫醒）——两者同时打开时，`question` 由提醒接管，不再额外推一条文字通知，与 `results` 档一致。不写这个新值时行为与 0.6.17 完全一致
 - 非法或缺失的 `notify` 值照旧回落 `results`；从 `results` 热切到 `decisions` 时会清掉尚未发出的回合缓存，兜底计时器不会在切换后补推一条
 - 测试：新增 3 条用例（`decisions` 只放行批准/回答/出错、且不留下回合缓存；`askRemind` 与 `decisions` 互不影响；从 `results` 热切到 `decisions` 且无新帧时，兜底计时器不补推）
 

@@ -595,6 +595,24 @@ export class FatfishWorld implements World {
   }
 
   /**
+   * The three frames that wait on the person: approvals, questions and errors. Every level that
+   * keeps them (`results`, `decisions`) posts the same wording, so it lives here once.
+   */
+  private pushDecisionNotice(frame: Extract<HostFrame, { t: 'approval' | 'question' | 'error' }>): void {
+    switch (frame.t) {
+      case 'approval':
+        this.pushNotice(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
+        return;
+      case 'question':
+        this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+        return;
+      case 'error':
+        this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
+        return;
+    }
+  }
+
+  /**
    * `results`: one wake per finished turn. The turn's tool calls are counted silently and its
    * latest reply is held until `turn-end`, so a turn that ran a dozen tools still costs one notice.
    * Approvals, questions and errors break through at once: those are the person's to answer.
@@ -614,15 +632,11 @@ export class FatfishWorld implements World {
         this.flushTurn(frame.turn, frame.reason, false);
         return;
       case 'approval':
-        this.pushNotice(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
-        return;
       case 'question':
-        this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
+      case 'error':
+        this.pushDecisionNotice(frame);
         return;
       case 'question-end':
-        return;
-      case 'error':
-        this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
         return;
       case 'ready':
       case 'accepted':
@@ -643,13 +657,9 @@ export class FatfishWorld implements World {
   private notifyDecisions(frame: HostFrame): void {
     switch (frame.t) {
       case 'approval':
-        this.pushNotice(`[DSH] 正在等你批准 ${frame.name}${frame.reason ? `：${frame.reason}` : ''}。`, { kind: 'approval', name: frame.name });
-        return;
       case 'question':
-        this.pushNotice(`[DSH] 正在等你回答：${frame.text}`, { kind: 'question' });
-        return;
       case 'error':
-        this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
+        this.pushDecisionNotice(frame);
         return;
       case 'turn-start':
       case 'turn-end':
@@ -657,7 +667,10 @@ export class FatfishWorld implements World {
       case 'tool':
         this.clearTurn();
         return;
-      default:
+      case 'ready':
+      case 'accepted':
+      case 'refused':
+      case 'question-end':
         return;
     }
   }
