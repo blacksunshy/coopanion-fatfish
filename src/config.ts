@@ -43,6 +43,8 @@ export const ENGINE_OPTIONS_KIND = 'fatfish.engines';
 export type NotifyMode =
   /** Only what DSH produced and what waits on the person: one line per finished turn, plus approvals, questions and errors. */
   | 'results'
+  /** Only what needs the person — approvals, questions and errors; turn boundaries and replies are dropped uncached. */
+  | 'decisions'
   /** Every frame, one wake per event — the behaviour before this setting existed. */
   | 'all'
   /** Nothing: the pet still talks to DSH, but DSH never wakes it. */
@@ -56,6 +58,7 @@ export function notifyOptionRows(language?: Language): Array<{ value: NotifyMode
   const t = fatfishText(language).config;
   return [
     { value: 'results', label: t.notifyResults },
+    { value: 'decisions', label: t.notifyDecisions },
     { value: 'all', label: t.notifyAll },
     { value: 'off', label: t.notifyOff },
   ];
@@ -131,7 +134,8 @@ export interface FatfishConfigSection {
   relayPet: boolean;
   /**
    * How much DSH progress wakes the bot. `results` keeps one notice per finished turn plus the
-   * events that need the person; `all` is one wake per frame; `off` never wakes the bot.
+   * events that need the person; `decisions` keeps only those events and drops turns and replies
+   * uncached; `all` is one wake per frame; `off` never wakes the bot.
    */
   notify: NotifyMode;
   /**

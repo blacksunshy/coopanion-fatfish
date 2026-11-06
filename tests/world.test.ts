@@ -104,6 +104,48 @@ describe('what DSH progress becomes', () => {
     expect(text).toContain('第 7 轮结束（completed）');
   });
 
+  it('only passes approvals, questions and errors when notify is decisions', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      for (const notice of [
+        { t: 'turn-start', turn: 8 },
+        { t: 'tool', name: 'read', detail: '{"path":"a.ts"}' },
+        { t: 'reply', turn: 8, text: '做完了' },
+        { t: 'turn-end', turn: 8, reason: 'completed' },
+        { t: 'approval', name: 'write', reason: 'outside the workspace' },
+        { t: 'question', text: '要不要继续？' },
+        { t: 'error', text: '模型超时' },
+      ]) socket.send(JSON.stringify(notice));
+    }, { notify: 'decisions' });
+    await until(() => notices(host).length >= 3);
+    // The dropped frames get the same grace the `results` fallback timer would have used.
+    await new Promise((done) => setTimeout(done, 250));
+    expect(notices(host)).toHaveLength(3);
+    const text = notices(host).join('\n');
+    expect(text).toContain('批准 write');
+    expect(text).toContain('要不要继续？');
+    expect(text).toContain('出错：模型超时');
+    expect(text).not.toContain('轮开始');
+    expect(text).not.toContain('轮结束');
+    expect(text).not.toContain('做完了');
+    // Nothing was held, so no later fallback timer can wake the bot with this turn.
+    expect((world as unknown as { turnPending: unknown }).turnPending).toBeNull();
+  });
+
+  it('drops a reply held under results when the level switches to decisions with no frames', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'turn-start', turn: 9 }));
+      socket.send(JSON.stringify({ t: 'reply', turn: 9, text: '还没收尾' }));
+    });
+    await until(() => (world as unknown as { turnPending: unknown }).turnPending !== null);
+    // A hot switch (the config section is live) with no further frame: the fallback timer that
+    // `results` armed must not post a turn notice the new level forbids.
+    (world as unknown as { opts: { cfg: Record<string, unknown> } }).opts.cfg.notify = 'decisions';
+    await new Promise((done) => setTimeout(done, 5300));
+    expect(notices(host)).toHaveLength(0);
+  }, 8000);
+
   it('stays silent in the one-way mode', async () => {
     const { host } = await withHost((socket, frame) => {
       if (frame.t !== 'hello') return;
@@ -527,5 +569,18 @@ describe('a question the assistant asks (askRemind)', () => {
     await until(() => notices(host).length >= 1);
     expect(notices(host).join('\n')).toContain('正在等你回答：要用哪个分支？');
     expect(remindTimers(world)).toBe(0);
+  });
+
+  it('stays independent of the decisions notice level', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'question', text: '要用哪个分支？', callId: 'c1' }));
+      socket.send(JSON.stringify({ t: 'approval', name: 'write', reason: '' }));
+    }, { notify: 'decisions', askRemind: true, ttsEnabled: false });
+    await until(() => notices(host).length >= 1);
+    expect(remindTimers(world)).toBe(4);
+    // The question was spoken, not pushed; the approval still penetrates the quietest level.
+    expect(notices(host)).toHaveLength(1);
+    expect(notices(host)[0]).toContain('批准 write');
   });
 });

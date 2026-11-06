@@ -35,7 +35,7 @@ pnpm install
 | `discover` | 地址连不上时自动扫描本机端口找 DSH（VPN/安全软件误报时可关掉，改为手填固定端口——配合把 DSH 的 `webserver.port` 钉住） | `true` |
 | `relayPerson` | 把你说的话转交给 DSH | `false` |
 | `relayPet` | 把桌宠自己说的、做的转交给 DSH | `false` |
-| `notify` | DSH 干活时哪些进度唤醒桌宠：`results` 只报每轮结果与待批准/回答，`all` 每个事件都唤醒，`off` 只发送不接收 | `results` |
+| `notify` | DSH 干活时哪些进度唤醒桌宠：`results` 只报每轮结果与待批准/回答，`decisions` 只在需要拍板（批准/回答）或出错时唤醒、每轮结果与回复不推也不缓存，`all` 每个事件都唤醒，`off` 只发送不接收 | `results` |
 | `askRemind` | 弹选择框时让桌宠念固定短句「请选择」（0/10/60/120 秒各一次，选中即停），不叫醒桌面 AI；需 `coopanion-connector-dsh` ≥ 0.2.17 | `false` |
 | `ttsEnabled` | 朗读桌宠的回复 | `true` |
 | `engine` | 朗读引擎：`edge`（内置 Edge TTS）或 `http`（你自己的语音服务） | `edge` |
