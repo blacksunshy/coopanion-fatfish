@@ -17,7 +17,7 @@ export const PROTOCOL_VERSION = 1;
 export type HostFrame =
   | { t: 'ready'; v: number; session: string; cwd: string; model: string }
   | { t: 'turn-start'; turn: number }
-  | { t: 'turn-end'; turn: number; reason: string }
+  | { t: 'turn-end'; turn: number; reason: string; used?: number; size?: number }
   | { t: 'reply'; turn: number; text: string }
   | { t: 'tool'; name: string; detail: string }
   | { t: 'approval'; name: string; reason: string }
@@ -525,7 +525,12 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'turn-end': {
       const turn = num('turn');
-      return turn === null ? null : { t: 'turn-end', turn, reason: str('reason') ?? 'completed' };
+      if (turn === null) return null;
+      const used = num('used');
+      const size = num('size');
+      return used !== null && size !== null && size > 0
+        ? { t: 'turn-end', turn, reason: str('reason') ?? 'completed', used, size }
+        : { t: 'turn-end', turn, reason: str('reason') ?? 'completed' };
     }
     case 'reply': {
       const text = str('text');

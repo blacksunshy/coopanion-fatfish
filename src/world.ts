@@ -55,6 +55,10 @@ const SCAN_LIMIT = 50;
 const SCAN_MS = 1500;
 /** The person's lines that may wait for the bridge while it is down; beyond this the oldest drops. */
 const PENDING_MAX = 16;
+/** Context spent before a fresh DSH session takes over (0.9 = hand over at 90% used). */
+const HANDOVER_RATIO = 0.9;
+/** Turns one DSH session runs before a fresh one takes over when DSH reports no occupancy. */
+const HANDOVER_TURNS = 400;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
 /** The quiet period after a successful sweep; a Host that stays put is not re-found on every retry. */
@@ -175,6 +179,10 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /** Set once a handover for the current session has begun, so it happens once per session. */
+  private handoverStarted = false;
+  /** True while the fresh session's first line is still owed. */
+  private handoverSeedPending = false;
   /** The address the live socket actually dialled; sampled when the socket was created, so a
    *  rediscover that clears the hint cannot rewrite history. */
   private connectedUrl: string | null = null;
@@ -363,6 +371,13 @@ export class FatfishWorld implements World {
                 }
               });
             }
+            // The fresh hand-over session is now bound: send its seed line immediately instead of
+            // waiting for the fallback timer. A `ready` for a different session means the person
+            // switched sessions manually, so any hand-over in progress is dropped and re-armed.
+            if (this.handoverSeedPending) {
+              if (session?.session === this.session) void this.sendHandoverSeed();
+              else { this.handoverStarted = false; this.handoverSeedPending = false; }
+            }
           } else if (this.discoverOn) {
             void this.rediscover();
           }
@@ -463,8 +478,17 @@ export class FatfishWorld implements World {
   /**
    * One notice for the bot to judge. A notice that cannot be stored is one the person never needed,
    * so the failure is swallowed rather than raised into the socket's message handler.
+   *
+   * "Mouth only": when another world injects `globalThis.__cooPetSayRaw`, the line goes straight to
+   * the bubble and no model call is spent on it. A receipt for a line the person just handed over
+   * (`relayed`) stays silent; a failed hand-over still shows so the person notices.
    */
   private pushNotice(text: string, meta: Record<string, unknown>): void {
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      if (meta.kind !== 'relayed') rawSay(text);
+      return;
+    }
     void this.host?.pushEvent(
       { type: `${FATFISH_ID}.notice`, source: FATFISH_ID, ts: new Date().toISOString(), text, meta },
       { trigger: 'flush' },
@@ -552,6 +576,24 @@ export class FatfishWorld implements World {
       return;
     }
     if (frame.t === 'turn-start' || frame.t === 'turn-end') this.stopAskRemind();
+    // Hand over at the end of a turn that has nearly filled the session's context. Runs before the
+    // mouth-only shortcut so handover still works when the pet is acting as a mouth.
+    if (frame.t === 'turn-end') void this.maybeHandover(frame.turn, frame.used, frame.size);
+    // "Mouth only": when another world injects `__cooPetSayRaw`, decisions go straight to the
+    // bubble without waking the bot. Everything else (turn markers, tools) stays silent.
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      if (frame.t === 'reply') {
+        if (frame.text.trim()) rawSay(frame.text);
+      } else if (frame.t === 'approval') {
+        rawSay(`[DSH] 等你批准 ${frame.name}`);
+      } else if (frame.t === 'question') {
+        rawSay(`[DSH] 等你回答：${frame.text}`);
+      } else if (frame.t === 'error') {
+        rawSay(`[DSH] 出错：${frame.text}`);
+      }
+      return;
+    }
     const mode = this.notifyMode;
     if (mode === 'all') this.notifyAll(frame);
     else if (mode === 'results') this.notifyResult(frame);
@@ -610,6 +652,50 @@ export class FatfishWorld implements World {
         this.pushNotice(`[DSH] 出错：${frame.text}`, { kind: 'error' });
         return;
     }
+  }
+
+  /**
+   * Move the bridge on to a fresh DSH session when the current one is nearly full. DSH reports the
+   * routed model's context spend in `turn-end` when it can: hand over at `HANDOVER_RATIO`, or after
+   * `HANDOVER_TURNS` when it does not. One session hands over at most once; `handoverStarted` is set
+   * before the async `newSession()` call so a turn that ends while the new session is being created
+   * does not trigger a second creation.
+   */
+  private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
+    if (this.handoverStarted) return;
+    const ratio = size && size > 0 ? (used ?? 0) / size : 0;
+    const threshold = size && size > 0 ? HANDOVER_RATIO : HANDOVER_TURNS;
+    const overflow = size && size > 0 ? ratio >= threshold : turn >= threshold;
+    if (!overflow) return;
+    this.handoverStarted = true;
+    const client = this.client;
+    if (!client) { this.handoverStarted = false; return; }
+    try {
+      const outcome = await client.newSession();
+      if (!outcome.ok) { this.handoverStarted = false; return; }
+      // Pin before picking: otherwise the default owner can take over the new session before we bind.
+      this.pinnedSession = outcome.session;
+      this.session = outcome.session;
+      this.handoverSeedPending = true;
+      void client.pick(outcome.session);
+      setTimeout(() => void this.sendHandoverSeed(), 4000);
+    } catch {
+      this.handoverStarted = false;
+    }
+  }
+
+  /**
+   * The first line into the fresh session: a short hand-over note. It is sent once the new session
+   * is bound (see `onState`) — or, failing that, after the fallback timer above. Either way it
+   * clears `handoverStarted` so the next session can hand over again.
+   */
+  private async sendHandoverSeed(): Promise<void> {
+    if (!this.handoverSeedPending) return;
+    this.handoverSeedPending = false;
+    const seed = '[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。';
+    const result = await this.client?.say(seed);
+    this.handoverStarted = false;
+    if (result && result !== 'unsent') this.pushNotice(`[DSH] 交接首句投递失败：${result}`, { kind: 'handover-failed' });
   }
 
   /**
