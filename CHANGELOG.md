@@ -1,5 +1,11 @@
 # 更新说明
 
+## 0.6.19 — 已发布（GitHub Release）
+
+- **上下文接近满时自动交接会话（PR [#15](https://github.com/blacksunshy/coopanion-fatfish/pull/15)，致谢 @yuwanyou）**：DSH 在 `turn-end` 报上下文用量（需 `coopanion-connector-dsh` ≥ 0.2.18）时，桌宠在用量到 90% 自动新建会话、钉住、切过去，并投递一句交接种子；DSH 不报用量时回退到 400 轮兜底。每个会话最多交接一次，新会话绑定（`ready`）后立即发种子，不再等兜底计时器
+- **「只当嘴」模式**：另一个 world 注入 `globalThis.__cooPetSayRaw(text): boolean` 后，批准 / 回答 / 出错 / 回复直接进气泡、不叫醒桌面 AI；回合标记与工具调用保持静默。需要批准/回答时仍会推气泡，人不在线也看得到
+- 修复：原 PR 把 `ready` 处理放进了 `onFrame`，但 `ready` 只走 `onState` 从不进 `onFrame`，导致种子永远要等 4 秒兜底、手动切会话也不会重新上膛——已移到 `onState`；另修正了 `newSession` / `say` 的返回形状与当前 `client.ts` 不符（`{ok:true}` / `{ok:false}`、`string|null`）的编译错误；以及「只当嘴」模式下 `turn-end` 被提前 return 导致交接永不触发的问题
+
 ## 0.6.18 — 已发布（GitHub Release）
 
 - **DSH 通知新增 `decisions` 档（默认仍 `results`）**：只穿透 `approval` / `question` / `error` 三类需要人拍板或出错的帧；`turn-start` / `turn-end` / 回复（连同工具调用）**不推、不缓存、不排队**，直接丢弃，普通回合不会叫醒桌宠。`askRemind` 仍独立于档位（它只念白、不叫醒）——两者同时打开时，`question` 由提醒接管，不再额外推一条文字通知，与 `results` 档一致。不写这个新值时行为与 0.6.17 完全一致
