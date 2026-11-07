@@ -55,6 +55,10 @@ const SCAN_LIMIT = 50;
 const SCAN_MS = 1500;
 /** The person's lines that may wait for the bridge while it is down; beyond this the oldest drops. */
 const PENDING_MAX = 16;
+/** Context spent before a fresh DSH session takes over (0.9 = hand over at 90% used). */
+const HANDOVER_RATIO = 0.9;
+/** Turns one DSH session runs before a fresh one takes over when DSH reports no occupancy. */
+const HANDOVER_TURNS = 400;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
 /** The quiet period after a successful sweep; a Host that stays put is not re-found on every retry. */
@@ -175,6 +179,10 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /** Set once a handover for the current session has begun, so it happens once per session. */
+  private handoverStarted = false;
+  /** True while the fresh session's first line is still owed. */
+  private handoverSeedPending = false;
   /** The address the live socket actually dialled; sampled when the socket was created, so a
    *  rediscover that clears the hint cannot rewrite history. */
   private connectedUrl: string | null = null;
@@ -465,6 +473,13 @@ export class FatfishWorld implements World {
    * so the failure is swallowed rather than raised into the socket's message handler.
    */
   private pushNotice(text: string, meta: Record<string, unknown>): void {
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      // Mouth only: the line goes to the bubble, and no wake spends a model call on it. A receipt
+      // for a line the person just handed over stays silent; a failed hand-over still shows.
+      if (meta.kind !== 'relayed') rawSay(text);
+      return;
+    }
     void this.host?.pushEvent(
       { type: `${FATFISH_ID}.notice`, source: FATFISH_ID, ts: new Date().toISOString(), text, meta },
       { trigger: 'flush' },
@@ -538,9 +553,62 @@ export class FatfishWorld implements World {
     return mode === 'decisions' || mode === 'all' || mode === 'off' ? mode : 'results';
   }
 
+  /**
+   * 上下文用到 HANDOVER_RATIO(DSH 报的 used/size)就换一个 DSH 会话:旧会话仍可翻,新会话从文件起步。
+   * 没有用量数字时按轮数兜底。交接的第一句递过去,新会话读 CONSTITUTION、PARTNER 和交接页再往下干。
+   */
+  private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
+    if (this.handoverStarted) return;
+    const known = typeof used === 'number' && typeof size === 'number' && size > 0;
+    const ratio = known ? used / size : 0;
+    // A usage figure from the Host is the rule when there is one; the turn count is only the
+    // fallback for a Host too old to report it (otherwise it fires long before 90%).
+    if (known ? ratio < HANDOVER_RATIO : turn < HANDOVER_TURNS) return;
+    this.handoverStarted = true;
+    const client = this.client;
+    if (!client) { this.handoverStarted = false; return; }
+    const outcome = await client.newSession();
+    if (!outcome.ok) {
+      this.handoverStarted = false;
+      this.host?.log.warn(`handover: refused at turn ${turn} (${outcome.reason})`);
+      return;
+    }
+    this.pinnedSession = outcome.session;
+    this.session = outcome.session;
+    // Pin it before anything else: the session being left is still producing events, and auto-follow
+    // would otherwise snap the owner back to it, sending the first line of the new session there.
+    void client.pick(outcome.session);
+    this.handoverSeedPending = true;
+    this.host?.log.info(`handover: turn ${turn} used ${Math.round(ratio * 100)}% -> ${outcome.session}`);
+    // The Host binds the pet only when it sends `ready`; a `say` sent before that still lands in the
+    // session being left. Speak the first line once the new one is bound, or after a short fallback.
+    const timer = setTimeout(() => void this.sendHandoverSeed(), 4000);
+    timer.unref?.();
+  }
+
+  /** The one line a fresh session starts with; sent once, whichever comes first: `ready` or the timer. */
+  private async sendHandoverSeed(): Promise<void> {
+    if (!this.handoverSeedPending) return;
+    this.handoverSeedPending = false;
+    const client = this.client;
+    if (!client) return;
+    const refusal = await client.say('[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。');
+    if (refusal !== null) this.host?.log.warn(`handover: seed not delivered (${refusal})`);
+    // The new session is in use now, so the guard re-arms for the next handover; without this a world
+    // process would hand over exactly once and then never again.
+    this.handoverStarted = false;
+  }
+
   /** One notice from DSH, turned into an event for the bot to judge. */
   private async onFrame(frame: HostFrame): Promise<void> {
     if (!this.host) return;
+    // A `ready` names the session the Host now binds: the handover's first line goes out here, and a
+    // session this world did not start re-arms the guard.
+    if (frame.t === 'ready') {
+      if (frame.session === this.session && this.handoverSeedPending) { void this.sendHandoverSeed(); return; }
+      if (frame.session !== this.session) { this.handoverStarted = false; this.handoverSeedPending = false; }
+      return;
+    }
     // The question reminder never wakes the bot, so it is decided before (and independently of)
     // the notice level. `question-end` is the stop signal for an answer, a skip or a timeout.
     if (frame.t === 'question' && this.opts.cfg.askRemind === true) {
@@ -552,6 +620,24 @@ export class FatfishWorld implements World {
       return;
     }
     if (frame.t === 'turn-start' || frame.t === 'turn-end') this.stopAskRemind();
+    // Hand over before the context gets tight: DSH says how much the turn left spent, and the fresh
+    // session starts from the files instead of a summary.
+    if (frame.t === 'turn-end') void this.maybeHandover(frame.turn, frame.used, frame.size);
+    // Mouth only: while a sibling world offers a raw mouth, nothing here wakes the bot. DSH's reply
+    // shows in the bubble as written, turn chatter stays quiet, and decisions still show.
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      if (frame.t === 'reply') {
+        if (frame.text.trim()) rawSay(frame.text);
+      } else if (frame.t === 'approval') {
+        rawSay(`[DSH] 等你批准 ${frame.name}`);
+      } else if (frame.t === 'question') {
+        rawSay(`[DSH] 等你回答：${frame.text}`);
+      } else if (frame.t === 'error') {
+        rawSay(`[DSH] 出错：${frame.text}`);
+      }
+      return;
+    }
     const mode = this.notifyMode;
     if (mode === 'all') this.notifyAll(frame);
     else if (mode === 'results') this.notifyResult(frame);
