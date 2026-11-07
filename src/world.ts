@@ -58,7 +58,7 @@ const PENDING_MAX = 16;
 /** Context spent before a fresh DSH session takes over (0.9 = hand over at 90% used). */
 const HANDOVER_RATIO = 0.9;
 /** Turns one DSH session runs before a fresh one takes over when DSH reports no occupancy. */
-const HANDOVER_TURNS = 60;
+const HANDOVER_TURNS = 400;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
 /** The quiet period after a successful sweep; a Host that stays put is not re-found on every retry. */
@@ -181,6 +181,8 @@ export class FatfishWorld implements World {
   private pinnedSession: string | null = null;
   /** Set once a handover for the current session has begun, so it happens once per session. */
   private handoverStarted = false;
+  /** True while the fresh session's first line is still owed. */
+  private handoverSeedPending = false;
   /** The address the live socket actually dialled; sampled when the socket was created, so a
    *  rediscover that clears the hint cannot rewrite history. */
   private connectedUrl: string | null = null;
@@ -557,8 +559,11 @@ export class FatfishWorld implements World {
    */
   private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
     if (this.handoverStarted) return;
-    const ratio = typeof used === 'number' && typeof size === 'number' && size > 0 ? used / size : 0;
-    if (ratio < HANDOVER_RATIO && turn < HANDOVER_TURNS) return;
+    const known = typeof used === 'number' && typeof size === 'number' && size > 0;
+    const ratio = known ? used / size : 0;
+    // A usage figure from the Host is the rule when there is one; the turn count is only the
+    // fallback for a Host too old to report it (otherwise it fires long before 90%).
+    if (known ? ratio < HANDOVER_RATIO : turn < HANDOVER_TURNS) return;
     this.handoverStarted = true;
     const client = this.client;
     if (!client) { this.handoverStarted = false; return; }
@@ -568,16 +573,42 @@ export class FatfishWorld implements World {
       this.host?.log.warn(`handover: refused at turn ${turn} (${outcome.reason})`);
       return;
     }
-    this.pinnedSession = null;
+    this.pinnedSession = outcome.session;
     this.session = outcome.session;
-    this.handoverStarted = false;
+    // Pin it before anything else: the session being left is still producing events, and auto-follow
+    // would otherwise snap the owner back to it, sending the first line of the new session there.
+    void client.pick(outcome.session);
+    this.handoverSeedPending = true;
     this.host?.log.info(`handover: turn ${turn} used ${Math.round(ratio * 100)}% -> ${outcome.session}`);
-    void client.say('[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。');
+    // The Host binds the pet only when it sends `ready`; a `say` sent before that still lands in the
+    // session being left. Speak the first line once the new one is bound, or after a short fallback.
+    const timer = setTimeout(() => void this.sendHandoverSeed(), 4000);
+    timer.unref?.();
+  }
+
+  /** The one line a fresh session starts with; sent once, whichever comes first: `ready` or the timer. */
+  private async sendHandoverSeed(): Promise<void> {
+    if (!this.handoverSeedPending) return;
+    this.handoverSeedPending = false;
+    const client = this.client;
+    if (!client) return;
+    const refusal = await client.say('[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。');
+    if (refusal !== null) this.host?.log.warn(`handover: seed not delivered (${refusal})`);
+    // The new session is in use now, so the guard re-arms for the next handover; without this a world
+    // process would hand over exactly once and then never again.
+    this.handoverStarted = false;
   }
 
   /** One notice from DSH, turned into an event for the bot to judge. */
   private async onFrame(frame: HostFrame): Promise<void> {
     if (!this.host) return;
+    // A `ready` names the session the Host now binds: the handover's first line goes out here, and a
+    // session this world did not start re-arms the guard.
+    if (frame.t === 'ready') {
+      if (frame.session === this.session && this.handoverSeedPending) { void this.sendHandoverSeed(); return; }
+      if (frame.session !== this.session) { this.handoverStarted = false; this.handoverSeedPending = false; }
+      return;
+    }
     // The question reminder never wakes the bot, so it is decided before (and independently of)
     // the notice level. `question-end` is the stop signal for an answer, a skip or a timeout.
     if (frame.t === 'question' && this.opts.cfg.askRemind === true) {
