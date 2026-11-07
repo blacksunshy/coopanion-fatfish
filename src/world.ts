@@ -55,6 +55,10 @@ const SCAN_LIMIT = 50;
 const SCAN_MS = 1500;
 /** The person's lines that may wait for the bridge while it is down; beyond this the oldest drops. */
 const PENDING_MAX = 16;
+/** Context spent before a fresh DSH session takes over (0.9 = hand over at 90% used). */
+const HANDOVER_RATIO = 0.9;
+/** Turns one DSH session runs before a fresh one takes over when DSH reports no occupancy. */
+const HANDOVER_TURNS = 60;
 /** How long after startup the bridge still queues lines for a DSH that has never shown up. */
 const GRACE_MS = 30_000;
 /** The quiet period after a successful sweep; a Host that stays put is not re-found on every retry. */
@@ -175,6 +179,8 @@ export class FatfishWorld implements World {
   private running = false;
   /** When set, the pet refuses to follow the default owner and stays on this session. */
   private pinnedSession: string | null = null;
+  /** Set once a handover for the current session has begun, so it happens once per session. */
+  private handoverStarted = false;
   /** The address the live socket actually dialled; sampled when the socket was created, so a
    *  rediscover that clears the hint cannot rewrite history. */
   private connectedUrl: string | null = null;
@@ -465,6 +471,13 @@ export class FatfishWorld implements World {
    * so the failure is swallowed rather than raised into the socket's message handler.
    */
   private pushNotice(text: string, meta: Record<string, unknown>): void {
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      // Mouth only: the line goes to the bubble, and no wake spends a model call on it. A receipt
+      // for a line the person just handed over stays silent; a failed hand-over still shows.
+      if (meta.kind !== 'relayed') rawSay(text);
+      return;
+    }
     void this.host?.pushEvent(
       { type: `${FATFISH_ID}.notice`, source: FATFISH_ID, ts: new Date().toISOString(), text, meta },
       { trigger: 'flush' },
@@ -538,6 +551,30 @@ export class FatfishWorld implements World {
     return mode === 'decisions' || mode === 'all' || mode === 'off' ? mode : 'results';
   }
 
+  /**
+   * 上下文用到 HANDOVER_RATIO(DSH 报的 used/size)就换一个 DSH 会话:旧会话仍可翻,新会话从文件起步。
+   * 没有用量数字时按轮数兜底。交接的第一句递过去,新会话读 CONSTITUTION、PARTNER 和交接页再往下干。
+   */
+  private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
+    if (this.handoverStarted) return;
+    const ratio = typeof used === 'number' && typeof size === 'number' && size > 0 ? used / size : 0;
+    if (ratio < HANDOVER_RATIO && turn < HANDOVER_TURNS) return;
+    this.handoverStarted = true;
+    const client = this.client;
+    if (!client) { this.handoverStarted = false; return; }
+    const outcome = await client.newSession();
+    if (!outcome.ok) {
+      this.handoverStarted = false;
+      this.host?.log.warn(`handover: refused at turn ${turn} (${outcome.reason})`);
+      return;
+    }
+    this.pinnedSession = null;
+    this.session = outcome.session;
+    this.handoverStarted = false;
+    this.host?.log.info(`handover: turn ${turn} used ${Math.round(ratio * 100)}% -> ${outcome.session}`);
+    void client.say('[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。');
+  }
+
   /** One notice from DSH, turned into an event for the bot to judge. */
   private async onFrame(frame: HostFrame): Promise<void> {
     if (!this.host) return;
@@ -552,6 +589,24 @@ export class FatfishWorld implements World {
       return;
     }
     if (frame.t === 'turn-start' || frame.t === 'turn-end') this.stopAskRemind();
+    // Hand over before the context gets tight: DSH says how much the turn left spent, and the fresh
+    // session starts from the files instead of a summary.
+    if (frame.t === 'turn-end') void this.maybeHandover(frame.turn, frame.used, frame.size);
+    // Mouth only: while a sibling world offers a raw mouth, nothing here wakes the bot. DSH's reply
+    // shows in the bubble as written, turn chatter stays quiet, and decisions still show.
+    const rawSay = (globalThis as { __cooPetSayRaw?: (text: string) => boolean }).__cooPetSayRaw;
+    if (rawSay) {
+      if (frame.t === 'reply') {
+        if (frame.text.trim()) rawSay(frame.text);
+      } else if (frame.t === 'approval') {
+        rawSay(`[DSH] 等你批准 ${frame.name}`);
+      } else if (frame.t === 'question') {
+        rawSay(`[DSH] 等你回答：${frame.text}`);
+      } else if (frame.t === 'error') {
+        rawSay(`[DSH] 出错：${frame.text}`);
+      }
+      return;
+    }
     const mode = this.notifyMode;
     if (mode === 'all') this.notifyAll(frame);
     else if (mode === 'results') this.notifyResult(frame);
