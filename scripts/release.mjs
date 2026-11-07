@@ -68,6 +68,13 @@ async function preflight() {
   console.log(`  CHANGELOG 首段: ${firstH2}`);
   if (!firstH2.startsWith(version)) fail(`CHANGELOG.md 顶部不是 ## ${version}，先写更新说明`);
 
+  // locales 描述必须提到当前版本（市场介绍的数据源；0.6.19 漏过一回，靠记忆不可靠，固化成硬断言）
+  for (const lang of ['zh', 'en']) {
+    const d = pkg.cortico?.locales?.[lang]?.description ?? '';
+    console.log(`  locales.${lang} 提到 ${version}: ${d.includes(version)}`);
+    if (!d.includes(version)) fail(`cortico.locales.${lang}.description 未提到 ${version}，市场介绍会漏掉本版功能`);
+  }
+
   // 版本号没在 npm registry 上发过
   console.log(`  检查 ${PKG}@${version} 是否已在 npm 上`);
   try {

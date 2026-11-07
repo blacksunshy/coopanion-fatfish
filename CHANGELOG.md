@@ -1,5 +1,10 @@
 # 更新说明
 
+## 0.6.20 — 已发布（GitHub Release）
+
+- **纯描述修复版，代码与 0.6.19 完全一致**：0.6.19 发布时漏更新了 package.json 的 `cortico.locales` 双语描述与 README（扩展市场「介绍」的数据源），市场详情页看不到 0.6.19 的两个新功能——上下文将满自动交接（需 connector-dsh ≥ 0.2.18）与「只当嘴」模式。本版补齐这两处描述
+- 发布脚本 `release.mjs` 新增硬断言：`cortico.locales.zh/en.description` 必须包含当前版本号，否则发布在阶段 0 直接失败——不再依赖记忆防漏
+
 ## 0.6.19 — 已发布（GitHub Release）
 
 - **上下文接近满时自动交接会话（PR [#15](https://github.com/blacksunshy/coopanion-fatfish/pull/15)，致谢 @yuwanyou）**：DSH 在 `turn-end` 报上下文用量（需 `coopanion-connector-dsh` ≥ 0.2.18）时，桌宠在用量到 90% 自动新建会话、钉住、切过去，并投递一句交接种子；DSH 不报用量时回退到 400 轮兜底。每个会话最多交接一次，新会话绑定（`ready`）后立即发种子，不再等兜底计时器
