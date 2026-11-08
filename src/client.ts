@@ -465,6 +465,26 @@ export class DshClient {
         entry.resolve({ ok: true, session: frame.session, workspace: frame.workspace });
         return;
       }
+      // A Host that cannot answer a listing says so with an `error` frame instead of the list. That
+      // is an answer: resolve the waiting caller now (null = do not know) and log the Host's own
+      // words, instead of letting the request sit out its whole timeout and read as "DSH is slow".
+      if (frame.t === 'error' && (this.waitingList || this.waitingWorkspaces)) {
+        if (this.waitingList) {
+          const entry = this.waitingList;
+          this.waitingList = null;
+          clearTimeout(entry.timer);
+          this.opts.log('warn', `DSH bridge answered a session listing with: ${frame.text}`);
+          entry.resolve(null);
+        }
+        if (this.waitingWorkspaces) {
+          const entry = this.waitingWorkspaces;
+          this.waitingWorkspaces = null;
+          clearTimeout(entry.timer);
+          this.opts.log('warn', `DSH bridge answered a workspace listing with: ${frame.text}`);
+          entry.resolve(null);
+        }
+        return;
+      }
       this.opts.onFrame(frame);
     });
     socket.on('close', () => {

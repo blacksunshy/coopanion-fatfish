@@ -294,3 +294,21 @@ describe('a conversation the pet asks for', () => {
     client.stop();
   });
 });
+
+describe('a listing the Host cannot answer', () => {
+  it('takes the Host\'s error frame as the answer instead of waiting out the timeout', async () => {
+    const { client } = await hosting((socket, frame) => {
+      if (frame.t === 'hello') {
+        socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+        return;
+      }
+      if (frame.t === 'list-sessions') {
+        socket.send(JSON.stringify({ t: 'error', text: 'this Host does not support listing sessions' }));
+      }
+    });
+    await until(() => client.connected);
+    const started = Date.now();
+    expect(await client.listSessions(5_000)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+});

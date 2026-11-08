@@ -349,6 +349,8 @@ export class FatfishWorld implements World {
         name: () => this.opts.name?.() ?? 'Coopanion',
         onFrame: (frame) => void this.onFrame(frame),
         onState: (connected, session) => {
+          const wasConnected = this.connected;
+          const previousSession = this.session;
           this.connected = connected;
           this.session = session?.session ?? '';
           this.model = session?.model ?? '';
@@ -359,23 +361,31 @@ export class FatfishWorld implements World {
             this.rememberPort(FatfishWorld.portOf(this.connectedUrl));
             host.log.info(`DSH bridge connected: session ${session?.session ?? ''}`);
             this.flushPending();
-            // A pinned session may no longer be the Host's default owner after a reconnect or
-            // pick-free switch; re-pick to stay on target. The first ready that comes while
-            // `start()` is still running sees this too, but the client is only re-hung, so
-            // pick fires after the bridge is fully up.
+            // The Host owns the pin, so its `ready` is the truth about who owns the bridge.
+            //  - A `ready` on a fresh connection may carry a different session because DSH restarted
+            //    and lost the pin; re-pick our local one to restore it.
+            //  - A `ready` while we were already connected means the Host moved the owner itself —
+            //    the person spoke in another session (Host auto-follow clears the pin), or the
+            //    pinned session was disposed. Re-picking here would yank the owner straight back and
+            //    the person's switch would never take effect, so follow the Host and drop the pin.
             if (this.pinnedSession && session?.session && this.pinnedSession !== session.session) {
-              void this.client?.pick(this.pinnedSession).then((refusal) => {
-                if (refusal) {
-                  host.log.warn(`DSH bridge pinned session gone: ${refusal}`);
-                  this.pinnedSession = null;
-                }
-              });
+              if (wasConnected) {
+                host.log.info(`DSH bridge followed Host owner ${session.session}, dropped local pin ${this.pinnedSession}`);
+                this.pinnedSession = null;
+              } else {
+                void this.client?.pick(this.pinnedSession).then((refusal) => {
+                  if (refusal) {
+                    host.log.warn(`DSH bridge pinned session gone: ${refusal}`);
+                    this.pinnedSession = null;
+                  }
+                });
+              }
             }
             // The fresh hand-over session is now bound: send its seed line immediately instead of
-            // waiting for the fallback timer. A `ready` for a different session means the person
-            // switched sessions manually, so any hand-over in progress is dropped and re-armed.
+            // waiting for the fallback timer. A `ready` for a session other than the one we moved to
+            // means the person switched manually, so any hand-over in progress is dropped and re-armed.
             if (this.handoverSeedPending) {
-              if (session?.session === this.session) void this.sendHandoverSeed();
+              if (!previousSession || previousSession === this.session) void this.sendHandoverSeed();
               else { this.handoverStarted = false; this.handoverSeedPending = false; }
             }
           } else if (this.discoverOn) {

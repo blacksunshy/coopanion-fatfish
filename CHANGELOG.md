@@ -1,5 +1,14 @@
 # 更新说明
 
+## 0.6.21 — 已发布（GitHub Release）
+
+- **修复：在 DSH 里手动切会话会被小肥鱼抢回去**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19)，YuYinDaJiang 报告）：小肥鱼身上钉着会话时，它每次收到 Host 的 `ready` 都会把本地固定重新 `pick` 一次。而 connector ≥ 0.2.5 的自动跟随会在你于另一个会话说话时把归属切过去并发 `ready` —— 于是小肥鱼立刻把归属抢回旧会话，你怎么切都「还在旧对话上」。现在：**连续在线时以 Host 的归属为准，跟随你切到的会话并丢掉本地固定**；只有断线重连后的第一个 `ready` 才恢复自己的固定（那种情况是 DSH 重启丢了 pin）
+- **修复：新建会话/列会话一律报「超时」没有原因**
+  - connector 侧（需 ≥ 0.2.19）给新建接口加 8 秒上限，失败带原因
+  - 桌宠侧把 Host 的 `error` 帧当作对应请求的回答立即返回，并在日志里记下 Host 的原话（例如「this Host does not support listing sessions」），不再白等满超时
+- **顺带修正**：自动交接的种子句判断此前用了刚被赋值的 `this.session`，永远为真；现在与上一状态比较，你手动切走时会正确放弃这次交接并重新上膛
+- 测试：`tsc --noEmit` 通过，`vitest` 97 passed（新增「Host 用 error 帧回答列会话时立即返回而非等满超时」）
+
 ## 0.6.20 — 已发布（GitHub Release）
 
 - **纯描述修复版，代码与 0.6.19 完全一致**：0.6.19 发布时漏更新了 package.json 的 `cortico.locales` 双语描述与 README（扩展市场「介绍」的数据源），市场详情页看不到 0.6.19 的两个新功能——上下文将满自动交接（需 connector-dsh ≥ 0.2.18）与「只当嘴」模式。本版补齐这两处描述
