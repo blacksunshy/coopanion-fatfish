@@ -114,6 +114,7 @@ export const zh: FatfishText = {
     sessionsEmpty: 'DSH 里没有开着的会话——先新建一个再说话。',
     sessionsFailed: '没能读到会话列表：{reason}',
     sessionsCurrentMark: '（默认送到这里）',
+    sessionsAimMark: '（你就指着这里）',
     sessionsPinnedMark: '（已固定）',
     newSessionDone: '已在 DSH 新建会话 {session}，之后的话都会送到那里。',
     newSessionDoneIn: '已在 DSH 新建会话 {session}（工作区 {workspace}），之后的话都会送到那里。',

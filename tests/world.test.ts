@@ -263,6 +263,35 @@ describe('the conversations the bot can see', () => {
     expect(receipt).not.toContain('session-sub');
   });
 
+  it('keeps its own aim apart from where the Host would land a line', async () => {
+    // The person spoke in session-9, so the Host's owner moved there, but this bot is still aimed
+    // at session-old. Marking both as "current" is what made it announce the wrong one as its own
+    // target — the two marks must be distinguishable, and neither may claim the other's row.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'pick') socket.send(JSON.stringify({ t: 'picked', session: 'session-old' }));
+      if (frame.t === 'list-sessions') {
+        socket.send(JSON.stringify({
+          t: 'session-list',
+          pinned: true,
+          owner: 'session-9',
+          sessions: [
+            { id: 'session-9', cwd: '/w', model: 'deepseek-flash', owner: true, pinned: false, subagent: false },
+            { id: 'session-old', cwd: '/w/fish', model: 'hy4free', owner: false, pinned: true, subagent: false },
+          ],
+        }));
+      }
+    });
+    const pick = world.tools().find((t) => t.name === 'dsh_pick_session')!;
+    await pick.handler({ session: 'session-old' }, {} as never);
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('session-9  /w  （默认送到这里）');
+    expect(receipt).toContain('session-old  /w/fish  （你就指着这里）');
+    // The aim mark belongs to the pinned row only, and the current mark to the Host's owner only.
+    expect(receipt.match(/（你就指着这里）/g)).toHaveLength(1);
+    expect(receipt.match(/（默认送到这里）/g)).toHaveLength(1);
+  });
+
   it('says there is nothing to speak into when the list is empty', async () => {
     const { world } = await withHost((socket, frame) => {
       if (frame.t === 'list-sessions') socket.send(JSON.stringify({ t: 'session-list', pinned: false, sessions: [] }));

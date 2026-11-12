@@ -114,6 +114,7 @@ export const en: FatfishText = {
     sessionsEmpty: 'No conversation is open in DSH — start one before speaking.',
     sessionsFailed: 'Could not read the conversation list: {reason}',
     sessionsCurrentMark: '(a line lands here by default)',
+    sessionsAimMark: '(this is where you are aimed)',
     sessionsPinnedMark: '(pinned)',
     newSessionDone: 'Started DSH session {session}; lines you hand over now go there.',
     newSessionDoneIn: 'Started DSH session {session} in {workspace}; lines you hand over now go there.',

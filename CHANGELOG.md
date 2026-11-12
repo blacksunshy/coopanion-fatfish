@@ -1,5 +1,13 @@
 # 更新说明
 
+## 0.6.23 — 未发布
+
+- **修复：`dsh_sessions` 把 Host 的落点当成自己的目标**（0.6.22 装机实测发现）。0.6.22 让桌宠看见了会话清单，但每一行只标一个「默认送到这里」——那是 **Host 的 owner**，不是桌宠自己固定到哪。于是人在别的会话说过话之后，桌宠读清单会把 Host 的落点当成「我要发的地方」，接着要么对着错的会话发，要么误以为自己的固定丢了
+  - 现在两个标记分开：**「（你就指着这里）」**只出现在桌宠自己 `dsh_pick_session` 固定过的那一行，**「（默认送到这里）」**只出现在 Host 报 `owner` 的那一行，两者不一致时按前者为准
+  - `dsh_sessions` 的工具描述与 `definition.ts`（即扩展自述 `describe.json`）都写明了这一点，`ENV_PROMPT.md` 里的「先看清会话，再说话」同步更新
+- **配套**：`coopanion-connector-dsh` ≥ 0.2.21 起，模型自己的输出（`assistant/message`、工具调用、回合起止）不再抢走 Host 的归属——两侧一起升，固定过的会话才不会再被悄悄换掉
+- 测试：`tsc --noEmit` 通过；`vitest` **104 passed**（新增「自己的目标与 Host 的落点分开标出，且互不冒充」）
+
 ## 0.6.22 — 未发布
 
 - **修复：话发错会话**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19) 的另一半）。根本原因是 DSH 侧插件只有一个「猜出来的默认会话」：它取最新注册的非子代理 agent，而 DSH 在人物**只切标签页不说话**时一条事件都不发——于是桌宠说出的每一句话都可能落进几小时前那个 tab。本版让桌宠自己核对，而不是继续信那个猜测：
@@ -13,7 +21,7 @@
 - 兼容：`PROTOCOL_VERSION` 仍是 1，新增字段一律可选。旧 Host（< 0.2.20）不认识 `say.session`，会忽略它并按老规矩投递，本版会如实报「收据没有说明落在哪个会话」；旧桌宠连新 Host 行为完全不变
 - 需要 `coopanion-connector-dsh` **≥ 0.2.20** 才用得上指名投递与清单推送
 - 顺带：新增 `scripts/emit-describe.mjs`，用 esbuild 打包真实的 `definition.ts` 重新生成 `describe.json`（此前只能手改 JSON，容易和 `tools()` 漂移）
-- 测试：`tsc --noEmit` 通过，`vitest` 99 passed（新增 6 条：指名投递、拒回原因与清单、`dsh_sessions` 列出并标出默认、空清单、面板/工具对齐）
+- 测试：`tsc --noEmit` 通过，`vitest` 99 passed（新增 6 条：指名投递、拒回原因与清单、`dsh_sessions` 列出并标出默认、空清单、面板/工具对齐）→ 0.6.23 又加 1 条后为 104 passed
 
 ## 0.6.21 — 已发布（GitHub Release）
 

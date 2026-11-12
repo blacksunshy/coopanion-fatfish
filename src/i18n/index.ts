@@ -149,7 +149,9 @@ export interface FatfishText {
     sessionsFailed: string;
     /** Row marker: a line without a pin lands in this conversation. */
     sessionsCurrentMark: string;
-    /** Row marker: the person pinned this conversation. */
+    /** Row marker: the pet itself is aimed here, so its next line names this conversation. */
+    sessionsAimMark: string;
+    /** Row marker: the conversation is pinned on the Host side too. */
     sessionsPinnedMark: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;

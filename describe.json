@@ -26,7 +26,7 @@
     },
     {
       "name": "dsh_sessions",
-      "description": "List every DeepSeek Harness conversation that is open right now, and say which one the pet is aimed at. DSH sends nothing when a person merely switches tabs, so the pet's aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means. The row marked current is where a line goes without a pin; dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it. An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.",
+      "description": "List every DeepSeek Harness conversation that is open right now, and say which one the pet is aimed at. DSH sends nothing when a person merely switches tabs, so the pet's aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means. The list marks two things apart: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name. The row marked current is where a line goes without a pin; dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it. An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.",
       "tags": [
         "speak"
       ],
