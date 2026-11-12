@@ -1,5 +1,20 @@
 # 更新说明
 
+## 0.6.22 — 未发布
+
+- **修复：话发错会话**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19) 的另一半）。根本原因是 DSH 侧插件只有一个「猜出来的默认会话」：它取最新注册的非子代理 agent，而 DSH 在人物**只切标签页不说话**时一条事件都不发——于是桌宠说出的每一句话都可能落进几小时前那个 tab。本版让桌宠自己核对，而不是继续信那个猜测：
+  - **新增 `dsh_sessions`**：列出此刻开着的全部会话（子代理不列），标出「默认送到这里」是哪一个、哪个被固定；清单为空时直接回「先新建一个再说话」
+  - **`dsh_send` 指名投递**：固定过（`dsh_pick_session` / 面板「固定到当前会话」）之后，帧里带 `session`，Host 先按当前清单复核再投递；会话被归档/关闭就拒回，**绝不静默换成别的会话**
+  - **收据带落点**：`accepted` 带 `session`，`dsh_send` 回「已交给 DSH（会话 …）」而不是笼统的「已交给 DSH」；被拒回时把 `code` 与原因原样交给 Coo，它照着清单重新对准，不再盲目重发
+  - **拒绝即恢复**：`refused` 携带的会话清单会留在手里，下一次 `dsh_sessions` 不必再问一轮
+  - **`dsh_pick_session` 记住本地固定**：切换成功后本地也记下，下一句话就会指认这个会话，而不是重新落回 Host 的猜测
+  - **交接种子指名投递**：上下文将满自动交接时，种子句显式发给新会话，不再和 Host 的 owner 抢
+- **环境提示词**（`ENV_PROMPT.md`）新增一节「先看清会话，再说话」：不确定就 `dsh_sessions` → `dsh_pick_session` → `dsh_send`，并明确写下**「该不该新建会话」的判断依据是清单为空或要的会话已不在清单里**
+- 兼容：`PROTOCOL_VERSION` 仍是 1，新增字段一律可选。旧 Host（< 0.2.20）不认识 `say.session`，会忽略它并按老规矩投递，本版会如实报「收据没有说明落在哪个会话」；旧桌宠连新 Host 行为完全不变
+- 需要 `coopanion-connector-dsh` **≥ 0.2.20** 才用得上指名投递与清单推送
+- 顺带：新增 `scripts/emit-describe.mjs`，用 esbuild 打包真实的 `definition.ts` 重新生成 `describe.json`（此前只能手改 JSON，容易和 `tools()` 漂移）
+- 测试：`tsc --noEmit` 通过，`vitest` 99 passed（新增 6 条：指名投递、拒回原因与清单、`dsh_sessions` 列出并标出默认、空清单、面板/工具对齐）
+
 ## 0.6.21 — 已发布（GitHub Release）
 
 - **修复：在 DSH 里手动切会话会被小肥鱼抢回去**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19)，YuYinDaJiang 报告）：小肥鱼身上钉着会话时，它每次收到 Host 的 `ready` 都会把本地固定重新 `pick` 一次。而 connector ≥ 0.2.5 的自动跟随会在你于另一个会话说话时把归属切过去并发 `ready` —— 于是小肥鱼立刻把归属抢回旧会话，你怎么切都「还在旧对话上」。现在：**连续在线时以 Host 的归属为准，跟随你切到的会话并丢掉本地固定**；只有断线重连后的第一个 `ready` 才恢复自己的固定（那种情况是 DSH 重启丢了 pin）

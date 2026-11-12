@@ -8,7 +8,7 @@ Coopanion 桌宠的 Cortico World 扩展。一句话：**和 DeepSeek Harness（
 - **回复有声音**：内置 19 个 Edge TTS 音色（晓晓、云希、东北晓北、陕西晓妮、粤语曉曼、台湾曉臻、Aria、Jenny 等），另有一排「语音包」预设——温柔女声、活泼少女、播音腔、东北/陕西口音、粤语、台湾腔、English 各一档，选一个就把音色、语速、音高、音量整套换好；也可以选「自定义」自己调音色、语速、音高、音量。宠物回复你的同时读出声，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
 - **上下文将满自动交接（0.6.20 起，需 connector ≥ 0.2.18）**：DSH 在每轮结束上报上下文用量，到 90% 时自动新建会话、钉住并切过去，投递一句交接种子；Host 不报用量时按 400 轮兜底，每个会话最多交接一次。
 - **「只当嘴」模式（0.6.20 起）**：另一个 world 注入 `globalThis.__cooPetSayRaw(text)` 后，批准 / 回答 / 出错 / 回复直接进气泡、不叫醒桌面 AI；回合标记与工具调用保持静默。
-- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12，`dsh_new_session` 指定工作区与 `dsh_workspaces` 要求 ≥ 0.2.14**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
+- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12，`dsh_new_session` 指定工作区与 `dsh_workspaces` 要求 ≥ 0.2.14，指名投递会话（`dsh_sessions` + `say.session`）要求 ≥ 0.2.20**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
 
 两半共用一次事件扫描，各自记各自的进度，都只读启动之后的新消息：语音从启动后的第一条开始（重启不重播），桥接也只转发启动之后你说的话（重启不补发旧的）；启动时还没连上 DSH 的那几句会先排队，连上后补发。
 
@@ -82,6 +82,19 @@ Coopanion WebUI → Fatfish 面板显示桥接状态：地址、当前会话、�
 - **解除固定**：真的通知 DSH 侧插件清掉那个固定（`unpin`），桌宠重新「跟随 DSH 活动」。以前这一步只清桌宠自己那份状态，DSH 仍把消息送进"已经放开"的会话。
 - **刷新测试**：强制重读一次状态，显示当前 session id / model，若与上次不同会标注"会话 ID 已更新"等；会话列表打开着的话一并重读。快速来回切 tab 之后点它一次就对齐了。
 - **选择会话**：列出 DSH 全部实时会话（会话 id、模型、哪个是默认、哪个是固定的；子代理会话不列出），点一行就把桌宠切过去。列表读不出来时提示「读取会话列表失败」，与"DSH 真的没有打开的会话"分开。
+
+### 发错会话：Coo 现在怎么自己核对
+
+以前 `dsh_send` 只是把话交给 Host，Host 再交给它自己猜的「默认会话」——那个猜测可能是几小时前建的、你早就没在看的那个 tab。现在两边配合，Coo 每次说话前都能自己核对：
+
+- **能看见清单**：`dsh_sessions` 列出此刻开着的全部会话，并标出「默认送到这里」是哪一个；子代理会话不算
+- **能指名投递**：`dsh_pick_session` 之后，`dsh_send` 的帧里带着会话 id（`say.session`），Host 收到后先按当前清单复核——会话没了就**拒回**，绝不静默换成别的会话
+- **拒回收据带原因和清单**：`refused` 带 `code`（`stale-session` / `no-session` / `forwarding-off` / …）和当时的全部会话，Coo 一次往返就能重新对准
+- **收据说清落点**：`accepted` 带 `session`（这句话进了哪个会话）与 `sessions`
+- **主动推送**：每次有会话新开或被关闭，Host 都会推一帧 `session-list`，不用问也能跟上
+- **判断要不要新建**：清单为空、或你要的那个会话已经不在清单里，就去 `dsh_new_session`，而不是发一条指望 Host 兜底的 `say`
+
+> 需要 `coopanion-connector-dsh` **≥ 0.2.20**；旧 Host 不认识 `say.session`，会静默忽略它（仍按老规矩送到 owner），`dsh_send` 在这种情况下会如实报「收据没有说明落在哪个会话」。反过来，新版 Host 对旧桌宠完全向后兼容——不带 `session` 的 `say` 行为不变。
 
 > ⚠️ **只切 tab 不说话时，DSH 不会通知插件**：`agent/created` 只在某个 tab 首次打开时发一次，`session/event` 只有真有活动才有；`.dsh` 的持久化里也没有"当前会话"字段。所以桌宠无法实时感知静默导航——想立刻对准，点「刷新测试」或「选择会话」；已经固定（pin）的会话不跟着跑本来就是设计如此。
 

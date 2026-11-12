@@ -136,9 +136,21 @@ export interface FatfishText {
   model: {
     notConnected: string;
     sent: string;
+    /** `dsh_send` succeeded and the Host named the conversation that took the line. */
+    sentInto: string;
     sendFailed: string;
     statusConnected: string;
     statusOffline: string;
+    /** `dsh_sessions` listed the open conversations; `{list}` is one line per conversation. */
+    sessionsDone: string;
+    /** `dsh_sessions` found nothing to speak into. */
+    sessionsEmpty: string;
+    /** `dsh_sessions` could not read them; `{reason}` says why. */
+    sessionsFailed: string;
+    /** Row marker: a line without a pin lands in this conversation. */
+    sessionsCurrentMark: string;
+    /** Row marker: the person pinned this conversation. */
+    sessionsPinnedMark: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;
     /** `dsh_new_session` succeeded in a workspace the pet named; `{workspace}` is its path. */
