@@ -24,6 +24,14 @@ export interface SessionRow {
    * conversation nobody has named yet, so a reader must treat both as "no title to show".
    */
   title?: string;
+  /**
+   * Whether the conversation is working right now — a turn is open and the model is still going.
+   *
+   * The difference between "it is busy" and "it ignored me" matters to a bot: without this it
+   * either repeats itself into a conversation that is still answering, or treats silence as a
+   * refusal. Absent from a Host older than 0.2.23, so a reader must not read absent as idle.
+   */
+  running?: boolean;
   owner: boolean;
   pinned: boolean;
   subagent: boolean;
@@ -633,6 +641,9 @@ function sessionRows(value: unknown): SessionRow[] {
       // A Host older than 0.2.22 sends no title at all; keep the key out then, so a reader can
       // tell "this Host cannot tell me" from "this conversation has no name yet".
       ...(title === '' ? {} : { title }),
+      // Same rule for `running`: a Host older than 0.2.23 cannot answer, and claiming "idle" on its
+      // behalf would tell the bot a conversation is free when nobody knows whether it is.
+      ...(typeof row.running === 'boolean' ? { running: row.running } : {}),
       owner: row.owner === true,
       pinned: row.pinned === true,
       subagent: row.subagent === true,

@@ -159,6 +159,15 @@ export interface FatfishText {
      * DSH has not named it. The id and directory are still printed beside it.
      */
     sessionsUntitled: string;
+    /**
+     * Row marker: a turn is open in that conversation right now.
+     *
+     * Without it a bot cannot tell a conversation that is still thinking from one that never
+     * answered, and repeats itself into a busy session or treats silence as a refusal.
+     */
+    sessionsRunningMark: string;
+    /** Row marker: nothing is running there, so a line handed over now will be picked up fresh. */
+    sessionsIdleMark: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;
     /** `dsh_new_session` succeeded in a workspace the pet named; `{workspace}` is its path. */

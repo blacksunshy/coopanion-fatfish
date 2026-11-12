@@ -339,6 +339,44 @@ describe('the conversations the bot can see', () => {
     expect(receipt.match(/（你就指着这里）/g)).toHaveLength(1);
   });
 
+  it('says which conversations are working right now', async () => {
+    // "still thinking" and "never answered" look identical to a bot that cannot see this, and the
+    // honest response to each is the opposite: wait, or hand the line over again.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        owner: 'session-9',
+        sessions: [
+          { id: 'session-9', cwd: '/w', title: '修复桌宠会话错发', model: 'm', running: true, owner: true, pinned: false, subagent: false },
+          { id: 'session-old', cwd: '/w/fish', title: '鱼的语料整理', model: 'm', running: false, owner: false, pinned: false, subagent: false },
+        ],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('修复桌宠会话错发  session-9  /w  （默认送到这里） （正在跑）');
+    expect(receipt).toContain('鱼的语料整理  session-old  /w/fish  （空闲）');
+  });
+
+  it('shows no state at all when the Host cannot say', async () => {
+    // Absent is not idle. A Host older than connector 0.2.23 sends no `running`, and printing
+    // "（空闲）" on its behalf would promise a free conversation nobody has checked.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        sessions: [{ id: 'session-9', cwd: '/w', model: 'm', owner: true, pinned: false, subagent: false }],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).not.toContain('（正在跑）');
+    expect(receipt).not.toContain('（空闲）');
+  });
+
   it('says there is nothing to speak into when the list is empty', async () => {
     const { world } = await withHost((socket, frame) => {
       if (frame.t === 'list-sessions') socket.send(JSON.stringify({ t: 'session-list', pinned: false, sessions: [] }));

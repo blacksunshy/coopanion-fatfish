@@ -56,6 +56,7 @@ const DESCRIBE: WorldDescribe = {
         'Each row leads with the conversation\'s title — the name the person sees in DSH, and the only thing that tells "the bug-fix conversation" apart from "the one about the other repository". Read the titles before choosing: an id and a directory cannot say what a conversation is about.',
         'DSH sends nothing when a person merely switches tabs, so the pet\'s aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means.',
         'The list marks two things separately: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name.',
+        'Each row also says whether that conversation is running right now. A running one is still working, so silence from it is work in progress rather than an answer — do not hand it the same request twice just because it has not replied. A Host older than connector 0.2.23 cannot say, and then no state is shown at all; that is not the same as "idle".',
         'dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
         'An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.',
       ].join(' '),

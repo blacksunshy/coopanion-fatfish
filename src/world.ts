@@ -989,6 +989,7 @@ export class FatfishWorld implements World {
           'Each row leads with the conversation\'s title — the name the person sees in DSH, and the only thing that tells "the bug-fix conversation" apart from "the one about the other repository". Read the titles before choosing: an id and a directory cannot say what a conversation is about.',
           'DSH sends nothing when a person merely switches tabs, so the pet\'s aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means.',
           'The list marks two things separately: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name.',
+          'Each row also says whether that conversation is running right now. A running one is still working, so silence from it is work in progress rather than an answer — do not hand it the same request twice just because it has not replied. A Host older than connector 0.2.23 cannot say, and then no state is shown at all; that is not the same as "idle".',
           'dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
           'An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.',
         ].join(' '),
@@ -1013,6 +1014,12 @@ export class FatfishWorld implements World {
             if (this.pinnedSession === row.id) marks.push(t.sessionsAimMark);
             if (row.owner) marks.push(t.sessionsCurrentMark);
             if (row.pinned && row.owner) marks.push(t.sessionsPinnedMark);
+            // Whether a turn is open right now. An older Host sends no `running` at all, and that
+            // is not the same answer as "idle": saying "idle" on its behalf would tell the bot a
+            // conversation is free to take a line when nobody has checked. So: report it when the
+            // Host reports it, stay silent when it does not.
+            if (row.running === true) marks.push(t.sessionsRunningMark);
+            else if (row.running === false) marks.push(t.sessionsIdleMark);
             const tail = marks.length > 0 ? `  ${marks.join(' ')}` : '';
             // The title goes first: it is the only field that says what the conversation is about,
             // and a Host older than 0.2.22 sends none, so fall back to the directory it does send.
