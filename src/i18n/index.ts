@@ -153,6 +153,12 @@ export interface FatfishText {
     sessionsAimMark: string;
     /** Row marker: the conversation is pinned on the Host side too. */
     sessionsPinnedMark: string;
+    /**
+     * Shown in place of a conversation's title when it has none yet — either the Host is older
+     * than connector 0.2.22 and cannot send titles, or nobody has spoken in that conversation, so
+     * DSH has not named it. The id and directory are still printed beside it.
+     */
+    sessionsUntitled: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;
     /** `dsh_new_session` succeeded in a workspace the pet named; `{workspace}` is its path. */

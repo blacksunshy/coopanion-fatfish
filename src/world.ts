@@ -986,9 +986,10 @@ export class FatfishWorld implements World {
         name: 'dsh_sessions',
         description: [
           'List every DeepSeek Harness conversation that is open right now, and say which one the pet is aimed at.',
+          'Each row leads with the conversation\'s title — the name the person sees in DSH, and the only thing that tells "the bug-fix conversation" apart from "the one about the other repository". Read the titles before choosing: an id and a directory cannot say what a conversation is about.',
           'DSH sends nothing when a person merely switches tabs, so the pet\'s aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means.',
           'The list marks two things separately: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name.',
-          'The row marked current is where a line goes without a pin; dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
+          'dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
           'An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.',
         ].join(' '),
         tags: ['speak'],
@@ -1005,11 +1006,18 @@ export class FatfishWorld implements World {
             // They disagree right after the person speaks in another conversation, and a single
             // combined mark is how the bot came to announce the wrong one as its own target.
             const marks: string[] = [];
+            // Not an `else`: right after dsh_pick_session the Host reports the same session as
+            // owner and as pinned, so one row is genuinely both. Suppressing the current mark
+            // there left the list with no landing row at all, which reads as "an unpinned line
+            // goes nowhere" — the same misreading of this list the two marks exist to prevent.
             if (this.pinnedSession === row.id) marks.push(t.sessionsAimMark);
-            else if (row.owner) marks.push(t.sessionsCurrentMark);
+            if (row.owner) marks.push(t.sessionsCurrentMark);
             if (row.pinned && row.owner) marks.push(t.sessionsPinnedMark);
             const tail = marks.length > 0 ? `  ${marks.join(' ')}` : '';
-            return `- ${row.id}  ${row.cwd}${tail}`;
+            // The title goes first: it is the only field that says what the conversation is about,
+            // and a Host older than 0.2.22 sends none, so fall back to the directory it does send.
+            const name = row.title && row.title.trim() !== '' ? row.title : t.sessionsUntitled;
+            return `- ${name}  ${row.id}  ${row.cwd}${tail}`;
           });
           return t.sessionsDone.replace('{list}', rows.join('\n'));
         },

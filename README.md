@@ -8,7 +8,7 @@ Coopanion 桌宠的 Cortico World 扩展。一句话：**和 DeepSeek Harness（
 - **回复有声音**：内置 19 个 Edge TTS 音色（晓晓、云希、东北晓北、陕西晓妮、粤语曉曼、台湾曉臻、Aria、Jenny 等），另有一排「语音包」预设——温柔女声、活泼少女、播音腔、东北/陕西口音、粤语、台湾腔、English 各一档，选一个就把音色、语速、音高、音量整套换好；也可以选「自定义」自己调音色、语速、音高、音量。宠物回复你的同时读出声，桌宠提问时连选项一起读。朗读支持 Windows 与 macOS（Linux 合成可用但暂无播放通道）。
 - **上下文将满自动交接（0.6.20 起，需 connector ≥ 0.2.18）**：DSH 在每轮结束上报上下文用量，到 90% 时自动新建会话、钉住并切过去，投递一句交接种子；Host 不报用量时按 400 轮兜底，每个会话最多交接一次。
 - **「只当嘴」模式（0.6.20 起）**：另一个 world 注入 `globalThis.__cooPetSayRaw(text)` 后，批准 / 回答 / 出错 / 回复直接进气泡、不叫醒桌面 AI；回合标记与工具调用保持静默。
-- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12，`dsh_new_session` 指定工作区与 `dsh_workspaces` 要求 ≥ 0.2.14，指名投递会话（`dsh_sessions` + `say.session`）要求 ≥ 0.2.20，归属只随人的动作移动要求 ≥ 0.2.21**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
+- **需要先装 DSH 的 Host 插件**：桥接这半边依赖 DSH 侧的 [`coopanion-connector-dsh`](https://github.com/blacksunshy/coopanion-connector-dsh)，没装它桥不会连（语音朗读不依赖，装完本包就能用）。**会话选择器、「解除固定」、`dsh_pick_session` 要求该插件 ≥ 0.2.11，「新建会话」、`dsh_new_session` 要求 ≥ 0.2.12，`dsh_new_session` 指定工作区与 `dsh_workspaces` 要求 ≥ 0.2.14，指名投递会话（`dsh_sessions` + `say.session`）要求 ≥ 0.2.20，归属只随人的动作移动要求 ≥ 0.2.21，清单里带会话标题要求 ≥ 0.2.22**；它**只在 GitHub 分发、没有发布 npm**，DSH 插件市场的来源填仓库地址。
 
 两半共用一次事件扫描，各自记各自的进度，都只读启动之后的新消息：语音从启动后的第一条开始（重启不重播），桥接也只转发启动之后你说的话（重启不补发旧的）；启动时还没连上 DSH 的那几句会先排队，连上后补发。
 
@@ -87,7 +87,7 @@ Coopanion WebUI → Fatfish 面板显示桥接状态：地址、当前会话、�
 
 以前 `dsh_send` 只是把话交给 Host，Host 再交给它自己猜的「默认会话」——那个猜测可能是几小时前建的、你早就没在看的那个 tab。现在两边配合，Coo 每次说话前都能自己核对：
 
-- **能看见清单**：`dsh_sessions` 列出此刻开着的全部会话（子代理会话不算），并把两个标记分开打：「（你就指着这里）」是桌宠自己固定到的那一行，「（默认送到这里）」是 Host 不指定时会落进去的那一行
+- **能看见清单**：`dsh_sessions` 列出此刻开着的全部会话（子代理会话不算），**每行先给会话标题**（没起名的显示「（还没起名）」），再是 id 与工作目录，并把两个标记分开打：「（你就指着这里）」是桌宠自己固定到的那一行，「（默认送到这里）」是 Host 不指定时会落进去的那一行
 - **能指名投递**：`dsh_pick_session` 之后，`dsh_send` 的帧里带着会话 id（`say.session`），Host 收到后先按当前清单复核——会话没了就**拒回**，绝不静默换成别的会话
 - **拒回收据带原因和清单**：`refused` 带 `code`（`stale-session` / `no-session` / `forwarding-off` / …）和当时的全部会话，Coo 一次往返就能重新对准
 - **收据说清落点**：`accepted` 带 `session`（这句话进了哪个会话）与 `sessions`

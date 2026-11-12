@@ -116,6 +116,7 @@ export const zh: FatfishText = {
     sessionsCurrentMark: '（默认送到这里）',
     sessionsAimMark: '（你就指着这里）',
     sessionsPinnedMark: '（已固定）',
+    sessionsUntitled: '（还没起名）',
     newSessionDone: '已在 DSH 新建会话 {session}，之后的话都会送到那里。',
     newSessionDoneIn: '已在 DSH 新建会话 {session}（工作区 {workspace}），之后的话都会送到那里。',
     newSessionUnverified: '会话 {session} 建好了，但这个版本的 DSH 插件不回报工作区，无法确认它建在你指定的地方。',

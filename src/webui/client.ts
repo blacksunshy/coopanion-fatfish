@@ -217,10 +217,16 @@ const bridgePanel: WebUiPanel = {
         const folder = s.cwd ? s.cwd.split(/[\\/]/).filter(Boolean).pop() ?? '' : '';
         const marks: string[] = [];
         if (active && id === active) marks.push(t.panel.current);
+        // Same rule as `dsh_sessions`: the Host's owner keeps its mark even when that row is also
+        // the pinned one, so the picker never stops saying which line lands without a pin.
+        if (s.owner) marks.push(t.panel.owner);
         if (s.pinned) marks.push(t.panel.pinned);
-        else if (s.owner) marks.push(t.panel.owner);
+        // The title is what the person recognises the conversation by; an older Host sends none,
+        // and then the short id and folder are all there is to go on.
+        const title = typeof s.title === 'string' && s.title.trim() !== '' ? s.title.trim() : '';
+        const label = title ? `${title} · ${shortId}` : `${shortId}${folder ? ` · ${folder}` : ''}`;
         const btn = asUi.button(
-          `${shortId}${folder ? ` · ${folder}` : ''}${marks.length ? `（${marks.join('·')}）` : ''}`,
+          `${label}${marks.length ? `（${marks.join('·')}）` : ''}`,
           { size: 'sm' },
         );
         btn.addEventListener('click', () => void pickRow(id));

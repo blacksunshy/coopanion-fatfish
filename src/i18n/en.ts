@@ -116,6 +116,7 @@ export const en: FatfishText = {
     sessionsCurrentMark: '(a line lands here by default)',
     sessionsAimMark: '(this is where you are aimed)',
     sessionsPinnedMark: '(pinned)',
+    sessionsUntitled: '(untitled)',
     newSessionDone: 'Started DSH session {session}; lines you hand over now go there.',
     newSessionDoneIn: 'Started DSH session {session} in {workspace}; lines you hand over now go there.',
     newSessionUnverified: 'Session {session} was created, but this DSH plugin does not report the workspace, so it cannot be confirmed it landed where you asked.',

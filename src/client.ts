@@ -18,6 +18,12 @@ export interface SessionRow {
   id: string;
   cwd: string;
   model: string;
+  /**
+   * The conversation's title, as DSH shows it in its own sidebar — the thing the person uses to
+   * tell one conversation from another. Absent from a Host older than 0.2.22, and empty for a
+   * conversation nobody has named yet, so a reader must treat both as "no title to show".
+   */
+  title?: string;
   owner: boolean;
   pinned: boolean;
   subagent: boolean;
@@ -609,7 +615,7 @@ export class DshClient {
  * The session rows inside a frame, tolerating anything a Host may omit.
  *
  * A row without an id is not a conversation anyone can name, so it is dropped rather than listed;
- * everything else defaults, because `cwd`, `model` and the flags only decorate the row.
+ * everything else defaults, because `cwd`, `title`, `model` and the flags only decorate the row.
  */
 function sessionRows(value: unknown): SessionRow[] {
   if (!Array.isArray(value)) return [];
@@ -619,10 +625,14 @@ function sessionRows(value: unknown): SessionRow[] {
     const row = entry as Record<string, unknown>;
     const id = typeof row.id === 'string' ? row.id : '';
     if (!id) continue;
+    const title = typeof row.title === 'string' ? row.title : '';
     rows.push({
       id,
       cwd: typeof row.cwd === 'string' ? row.cwd : '',
       model: typeof row.model === 'string' ? row.model : '',
+      // A Host older than 0.2.22 sends no title at all; keep the key out then, so a reader can
+      // tell "this Host cannot tell me" from "this conversation has no name yet".
+      ...(title === '' ? {} : { title }),
       owner: row.owner === true,
       pinned: row.pinned === true,
       subagent: row.subagent === true,
@@ -722,22 +732,9 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'session-list': {
       if (!Array.isArray(frame.sessions)) return null;
-      const sessions: SessionList['sessions'] = [];
-      for (const entry of frame.sessions) {
-        if (typeof entry !== 'object' || entry === null) continue;
-        const row = entry as Record<string, unknown>;
-        const id = typeof row.id === 'string' ? row.id : '';
-        if (!id) continue;
-        sessions.push({
-          id,
-          cwd: typeof row.cwd === 'string' ? row.cwd : '',
-          model: typeof row.model === 'string' ? row.model : '',
-          owner: row.owner === true,
-          pinned: row.pinned === true,
-          subagent: row.subagent === true,
-        });
-      }
-      return { t: 'session-list', sessions, pinned: frame.pinned === true };
+      // Same reader as the acks use: one place that knows how a row is spelled, so a field added
+      // to one path cannot go missing on the other (a pushed list would otherwise lose its titles).
+      return { t: 'session-list', sessions: sessionRows(frame.sessions), pinned: frame.pinned === true };
     }
     case 'unpinned':
       return { t: 'unpinned' };
