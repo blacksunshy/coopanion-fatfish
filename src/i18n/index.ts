@@ -136,9 +136,38 @@ export interface FatfishText {
   model: {
     notConnected: string;
     sent: string;
+    /** `dsh_send` succeeded and the Host named the conversation that took the line. */
+    sentInto: string;
     sendFailed: string;
     statusConnected: string;
     statusOffline: string;
+    /** `dsh_sessions` listed the open conversations; `{list}` is one line per conversation. */
+    sessionsDone: string;
+    /** `dsh_sessions` found nothing to speak into. */
+    sessionsEmpty: string;
+    /** `dsh_sessions` could not read them; `{reason}` says why. */
+    sessionsFailed: string;
+    /** Row marker: a line without a pin lands in this conversation. */
+    sessionsCurrentMark: string;
+    /** Row marker: the pet itself is aimed here, so its next line names this conversation. */
+    sessionsAimMark: string;
+    /** Row marker: the conversation is pinned on the Host side too. */
+    sessionsPinnedMark: string;
+    /**
+     * Shown in place of a conversation's title when it has none yet — either the Host is older
+     * than connector 0.2.22 and cannot send titles, or nobody has spoken in that conversation, so
+     * DSH has not named it. The id and directory are still printed beside it.
+     */
+    sessionsUntitled: string;
+    /**
+     * Row marker: a turn is open in that conversation right now.
+     *
+     * Without it a bot cannot tell a conversation that is still thinking from one that never
+     * answered, and repeats itself into a busy session or treats silence as a refusal.
+     */
+    sessionsRunningMark: string;
+    /** Row marker: nothing is running there, so a line handed over now will be picked up fresh. */
+    sessionsIdleMark: string;
     /** `dsh_new_session` succeeded; `{session}` is the conversation the Host made. */
     newSessionDone: string;
     /** `dsh_new_session` succeeded in a workspace the pet named; `{workspace}` is its path. */

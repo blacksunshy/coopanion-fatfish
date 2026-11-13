@@ -13,9 +13,37 @@ import { SEND_MAX } from './config.ts';
 /** The revision this package speaks; the Host refuses another one. */
 export const PROTOCOL_VERSION = 1;
 
+/** One live DSH conversation, as both `session-list` and the acks describe it. */
+export interface SessionRow {
+  id: string;
+  cwd: string;
+  model: string;
+  /**
+   * The conversation's title, as DSH shows it in its own sidebar — the thing the person uses to
+   * tell one conversation from another. Absent from a Host older than 0.2.22, and empty for a
+   * conversation nobody has named yet, so a reader must treat both as "no title to show".
+   */
+  title?: string;
+  /**
+   * Whether the conversation is working right now — a turn is open and the model is still going.
+   *
+   * The difference between "it is busy" and "it ignored me" matters to a bot: without this it
+   * either repeats itself into a conversation that is still answering, or treats silence as a
+   * refusal. Absent from a Host older than 0.2.23, so a reader must not read absent as idle.
+   */
+  running?: boolean;
+  owner: boolean;
+  pinned: boolean;
+  subagent: boolean;
+}
+
 /** Host→pet frames, as `coopanion-connector-dsh/src/protocol.ts` declares them. */
 export type HostFrame =
-  | { t: 'ready'; v: number; session: string; cwd: string; model: string }
+  /**
+   * The connection is usable and names the conversation a targetless line lands in. From connector
+   * 0.2.20 it also carries every open conversation, so the pet knows the menu without asking.
+   */
+  | { t: 'ready'; v: number; session: string; cwd: string; model: string; sessions?: SessionRow[]; pinned?: boolean }
   | { t: 'turn-start'; turn: number }
   | { t: 'turn-end'; turn: number; reason: string; used?: number; size?: number }
   | { t: 'reply'; turn: number; text: string }
@@ -25,18 +53,26 @@ export type HostFrame =
   /** The question above was answered, skipped or timed out; stop any reminder. */
   | { t: 'question-end'; callId: string }
   | { t: 'error'; text: string }
-  | { t: 'accepted'; id: string }
-  | { t: 'refused'; id: string; reason: string }
+  /** The words were delivered: `session` names the conversation that took them. */
+  | { t: 'accepted'; id: string; session?: string; sessions?: SessionRow[]; pinned?: boolean }
+  | {
+      t: 'refused';
+      id: string;
+      reason: string;
+      /** Why, in a form code can branch on: `stale-session`, `no-session`, `forwarding-off`, … */
+      code?: string;
+      sessions?: SessionRow[];
+      pinned?: boolean;
+    }
   /** Answer to a `pick` request: the pet now speaks into this session. */
   | { t: 'picked'; session: string }
   /** Answer to a `pick` request: the Host refused the switch (session not live). */
   | { t: 'refused'; reason: string }
-  /** Answer to a `list-sessions` request: every live session with its owner/pin state. */
-  | {
-      t: 'session-list';
-      sessions: Array<{ id: string; cwd: string; model: string; owner: boolean; pinned: boolean; subagent: boolean }>;
-      pinned: boolean;
-    }
+  /**
+   * The open conversations and who owns them: the answer to `list-sessions`, and from connector
+   * 0.2.20 also a push the Host sends whenever a conversation opens or is disposed.
+   */
+  | { t: 'session-list'; sessions: SessionRow[]; pinned: boolean; owner?: string | null }
   /** Answer to `unpin`: the Host dropped the pin, auto-follow takes over again. */
   | { t: 'unpinned' }
   /**
@@ -67,13 +103,32 @@ export interface DshSession {
   session: string;
   cwd: string;
   model: string;
+  /** Every open conversation, on a Host from connector 0.2.20 on. */
+  sessions?: SessionRow[];
+  pinned?: boolean;
 }
 
-/** Answer to `list-sessions`: the picker's raw material. */
+/** Answer to `list-sessions`: the picker's raw material, plus the owner a targetless say lands in. */
 export interface SessionList {
-  sessions: Array<{ id: string; cwd: string; model: string; owner: boolean; pinned: boolean; subagent: boolean }>;
+  sessions: SessionRow[];
   pinned: boolean;
+  /** The conversation the Host would deliver to right now; absent on a Host before 0.2.20. */
+  owner?: string | null;
 }
+
+/**
+ * What one `say` settled to.
+ *
+ * `refusal` alone is not enough to decide what to do next: the person can only act on a delivery
+ * failure if the pet knows whether the conversation went away (`stale-session`), never existed
+ * (`no-session`), or the Host is simply not forwarding. `code` is that distinction, and `sessions`
+ * is the list as it stood at the moment of the answer, so the retry does not need a second round
+ * trip — or worse, a guess.
+ */
+export type SayOutcome =
+  /** Delivered; `session` is the conversation that took the words. */
+  | { ok: true; session?: string; sessions?: SessionRow[]; pinned?: boolean }
+  | { ok: false; reason: string; code?: string; sessions?: SessionRow[]; pinned?: boolean };
 
 /** Answer to `list-workspaces`: where a `new` may put a conversation. */
 export interface WorkspaceList {
@@ -92,7 +147,7 @@ export class DshClient {
   private timer: NodeJS.Timeout | null = null;
   private stopped = true;
   /** `say` frames waiting for the Host's answer, by id. */
-  private readonly waiting = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
+  private readonly waiting = new Map<string, { resolve: (outcome: SayOutcome) => void; timer: NodeJS.Timeout }>();
   /** `pick` frames waiting for the Host's answer, by session id. */
   private readonly waitingPick = new Map<string, { resolve: (refusal: string | null) => void; timer: NodeJS.Timeout }>();
   /** The one `list-sessions` frame waiting for the Host's answer, if any. */
@@ -108,8 +163,26 @@ export class DshClient {
   /** `new` frames waiting for the Host's answer, by request id. */
   private readonly waitingNew = new Map<string, { resolve: (outcome: NewSessionOutcome) => void; timer: NodeJS.Timeout }>();
   private seq = 0;
+  /**
+   * The open conversations as last described by the Host — by `ready`, a pushed `session-list`, or
+   * an ack. This is the list in hand, so naming a target on the next line costs no round trip.
+   */
+  private known: SessionRow[] | null = null;
 
   constructor(private readonly opts: DshClientOptions) {}
+
+  /**
+   * Every conversation the Host last said was open, or `null` when it has not said yet (an older
+   * Host never does). A caller that wants a fresh answer asks `listSessions()`.
+   */
+  knownSessions(): SessionRow[] | null {
+    return this.known ? [...this.known] : null;
+  }
+
+  /** Replace the list in hand. Called for `ready`, pushed lists and every ack that carries one. */
+  private remember(sessions: SessionRow[] | undefined): void {
+    if (Array.isArray(sessions)) this.known = sessions;
+  }
 
   get connected(): boolean {
     return this.socket !== null && this.socket.readyState === this.socket.OPEN;
@@ -129,7 +202,7 @@ export class DshClient {
     }
     for (const [, entry] of this.waiting) {
       clearTimeout(entry.timer);
-      entry.resolve('the bridge stopped before DSH answered');
+      entry.resolve({ ok: false, reason: 'the bridge stopped before DSH answered', code: 'unsent' });
     }
     this.waiting.clear();
     for (const [, entry] of this.waitingPick) {
@@ -186,34 +259,42 @@ export class DshClient {
   }
 
   /**
-   * One line into DSH; resolves `null` when DSH accepted it, `'unsent'` when the line provably
-   * never left (the bridge was down or the socket refused the write), or a reason otherwise.
+   * One line into DSH, optionally naming the conversation that should take it.
    *
-   * The split matters to the caller: an `'unsent'` line can be queued and handed over once the
-   * bridge is back, while a timeout means the line may have reached DSH anyway — re-sending that
-   * would put the person's words into the conversation twice, so the caller reports it instead.
+   * The name is the whole point. DSH has no "currently focused conversation" signal — a person who
+   * merely switches tabs emits nothing — so the Host's own owner is a guess that can be hours stale.
+   * Naming the target makes the Host check it against the live list at the moment of delivery and
+   * refuse rather than quietly re-route; see `SayOutcome` for what the answer says about it.
    *
-   * A `say` that never gets an answer resolves rather than hanging: the caller shows a bubble, and
-   * a bubble that waits forever is worse than one that says the message did not arrive.
+   * Resolves `{ ok: false, reason: 'unsent' }` when the line provably never left (the bridge was down
+   * or the socket refused the write). That is the one refusal worth queueing: any other answer means
+   * the line may have arrived, and re-sending it would put the person's words in twice.
+   *
+   * A `say` that never gets an answer resolves rather than hanging: the caller shows a bubble, and a
+   * bubble that waits forever is worse than one that says the message did not arrive.
    */
-  say(text: string): Promise<string | null> {
+  say(text: string, session?: string): Promise<SayOutcome> {
     const body = text.trim().slice(0, SEND_MAX);
-    if (!body) return Promise.resolve('empty message');
-    if (!this.connected) return Promise.resolve('unsent');
+    if (!body) return Promise.resolve({ ok: false, reason: 'empty message', code: 'empty' });
+    if (!this.connected) return Promise.resolve({ ok: false, reason: 'unsent', code: 'unsent' });
+    const target = typeof session === 'string' ? session.trim().slice(0, 128) : '';
     const id = `p${++this.seq}`;
-    return new Promise<string | null>((resolve) => {
+    return new Promise<SayOutcome>((resolve) => {
       const timer = setTimeout(() => {
         this.waiting.delete(id);
-        resolve('DSH did not answer in time');
+        resolve({ ok: false, reason: 'DSH did not answer in time', code: 'timeout' });
       }, 15_000);
       timer.unref?.();
       this.waiting.set(id, { resolve, timer });
+      // `session` is only sent when there is one: a targetless line stays the exact old frame, so an
+      // older Host sees nothing new.
+      const frame = target ? { t: 'say', id, text: body, from: this.opts.name(), session: target } : { t: 'say', id, text: body, from: this.opts.name() };
       try {
-        this.socket!.send(JSON.stringify({ t: 'say', id, text: body, from: this.opts.name() }));
-      } catch (err) {
+        this.socket!.send(JSON.stringify(frame));
+      } catch {
         clearTimeout(timer);
         this.waiting.delete(id);
-        resolve('unsent');
+        resolve({ ok: false, reason: 'unsent', code: 'unsent' });
       }
     });
   }
@@ -384,7 +465,14 @@ export class DshClient {
           socket.close(1002, 'protocol mismatch');
           return;
         }
-        this.opts.onState(true, { session: frame.session, cwd: frame.cwd, model: frame.model });
+        this.opts.onState(true, {
+          session: frame.session,
+          cwd: frame.cwd,
+          model: frame.model,
+          sessions: frame.sessions,
+          pinned: frame.pinned,
+        });
+        this.remember(frame.sessions);
         return;
       }
       if (frame.t === 'accepted' || frame.t === 'refused') {
@@ -418,7 +506,15 @@ export class DshClient {
         if (!entry) return;
         clearTimeout(entry.timer);
         this.waiting.delete(answerId);
-        entry.resolve(frame.t === 'accepted' ? null : (frame as { reason: string }).reason);
+        // The ack repeats where the words went and what else was open, so the caller can show the
+        // landing spot and recover from a refusal without a second round trip. A Host before 0.2.20
+        // sends neither, which reads the same as "the words were accepted somewhere".
+        this.remember(frame.sessions);
+        if (frame.t === 'accepted') {
+          entry.resolve({ ok: true, session: frame.session, sessions: frame.sessions, pinned: frame.pinned });
+        } else {
+          entry.resolve({ ok: false, reason: frame.reason, code: frame.code, sessions: frame.sessions, pinned: frame.pinned });
+        }
         return;
       }
       if (frame.t === 'picked') {
@@ -431,11 +527,14 @@ export class DshClient {
         return;
       }
       if (frame.t === 'session-list') {
+        // A pushed list arrives with no request waiting on it; the list in hand is still updated, so
+        // the next line can name a conversation without asking again.
+        this.remember(frame.sessions);
         const entry = this.waitingList;
         this.waitingList = null;
         if (entry) {
           clearTimeout(entry.timer);
-          entry.resolve({ sessions: frame.sessions, pinned: frame.pinned });
+          entry.resolve({ sessions: frame.sessions, pinned: frame.pinned, owner: frame.owner });
         }
         return;
       }
@@ -520,6 +619,39 @@ export class DshClient {
   }
 }
 
+/**
+ * The session rows inside a frame, tolerating anything a Host may omit.
+ *
+ * A row without an id is not a conversation anyone can name, so it is dropped rather than listed;
+ * everything else defaults, because `cwd`, `title`, `model` and the flags only decorate the row.
+ */
+function sessionRows(value: unknown): SessionRow[] {
+  if (!Array.isArray(value)) return [];
+  const rows: SessionRow[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    const id = typeof row.id === 'string' ? row.id : '';
+    if (!id) continue;
+    const title = typeof row.title === 'string' ? row.title : '';
+    rows.push({
+      id,
+      cwd: typeof row.cwd === 'string' ? row.cwd : '',
+      model: typeof row.model === 'string' ? row.model : '',
+      // A Host older than 0.2.22 sends no title at all; keep the key out then, so a reader can
+      // tell "this Host cannot tell me" from "this conversation has no name yet".
+      ...(title === '' ? {} : { title }),
+      // Same rule for `running`: a Host older than 0.2.23 cannot answer, and claiming "idle" on its
+      // behalf would tell the bot a conversation is free when nobody knows whether it is.
+      ...(typeof row.running === 'boolean' ? { running: row.running } : {}),
+      owner: row.owner === true,
+      pinned: row.pinned === true,
+      subagent: row.subagent === true,
+    });
+  }
+  return rows;
+}
+
 /** One frame the Host sent, or null when it is not one this pet understands. */
 export function parseHostFrame(raw: string): HostFrame | null {
   let value: unknown;
@@ -537,7 +669,18 @@ export function parseHostFrame(raw: string): HostFrame | null {
       const v = num('v');
       const session = str('session');
       if (v === null || session === null) return null;
-      return { t: 'ready', v, session, cwd: str('cwd') ?? '', model: str('model') ?? '' };
+      // From connector 0.2.20 the list rides along; an older Host simply has no `sessions` key.
+      const sessions = Array.isArray(frame.sessions) ? sessionRows(frame.sessions) : undefined;
+      const pinned = typeof frame.pinned === 'boolean' ? frame.pinned : undefined;
+      return {
+        t: 'ready',
+        v,
+        session,
+        cwd: str('cwd') ?? '',
+        model: str('model') ?? '',
+        ...(sessions ? { sessions } : {}),
+        ...(pinned === undefined ? {} : { pinned }),
+      };
     }
     case 'turn-start': {
       const turn = num('turn');
@@ -584,7 +727,15 @@ export function parseHostFrame(raw: string): HostFrame | null {
       // A `refused` with no id answers a `pick` request; one with an id answers a `say`.
       if (frame.t === 'refused' && id === null) return { t: 'refused', reason: str('reason') ?? '' };
       if (id === null) return null;
-      return frame.t === 'accepted' ? { t: 'accepted', id } : { t: 'refused', id, reason: str('reason') ?? '' };
+      const sessions = Array.isArray(frame.sessions) ? sessionRows(frame.sessions) : undefined;
+      const pinned = typeof frame.pinned === 'boolean' ? frame.pinned : undefined;
+      const carried = { ...(sessions ? { sessions } : {}), ...(pinned === undefined ? {} : { pinned }) };
+      if (frame.t === 'accepted') {
+        const landed = str('session');
+        return { t: 'accepted', id, ...(landed === null ? {} : { session: landed }), ...carried };
+      }
+      const code = str('code');
+      return { t: 'refused', id, reason: str('reason') ?? '', ...(code === null ? {} : { code }), ...carried };
     }
     case 'picked': {
       const session = str('session');
@@ -592,22 +743,9 @@ export function parseHostFrame(raw: string): HostFrame | null {
     }
     case 'session-list': {
       if (!Array.isArray(frame.sessions)) return null;
-      const sessions: SessionList['sessions'] = [];
-      for (const entry of frame.sessions) {
-        if (typeof entry !== 'object' || entry === null) continue;
-        const row = entry as Record<string, unknown>;
-        const id = typeof row.id === 'string' ? row.id : '';
-        if (!id) continue;
-        sessions.push({
-          id,
-          cwd: typeof row.cwd === 'string' ? row.cwd : '',
-          model: typeof row.model === 'string' ? row.model : '',
-          owner: row.owner === true,
-          pinned: row.pinned === true,
-          subagent: row.subagent === true,
-        });
-      }
-      return { t: 'session-list', sessions, pinned: frame.pinned === true };
+      // Same reader as the acks use: one place that knows how a row is spelled, so a field added
+      // to one path cannot go missing on the other (a pushed list would otherwise lose its titles).
+      return { t: 'session-list', sessions: sessionRows(frame.sessions), pinned: frame.pinned === true };
     }
     case 'unpinned':
       return { t: 'unpinned' };
