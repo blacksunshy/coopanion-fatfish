@@ -37,7 +37,8 @@ const DESCRIBE: WorldDescribe = {
         'Hand one line to the DeepSeek Harness conversation this pet is bridged to; DSH treats it as a message from the person. ' +
         "The person's own lines reach DSH through the bridge itself, and the notice that follows one says it arrived; hand over a line only when you have seen no such notice. " +
         "DSH writes the pet's name in a prefix of its own, so text that already carries one arrives inside a second. " +
-        'The receipt says whether DSH accepted it. Do not call it to narrate what you are doing.',
+        'The receipt names the conversation that took the line, and the answer to a refused line says why and carries every open conversation, so re-aim with dsh_pick_session instead of trying again blind. ' +
+        'Do not call it to narrate what you are doing.',
       tags: ['speak'],
       parameters: {
         type: 'object',
@@ -49,11 +50,26 @@ const DESCRIBE: WorldDescribe = {
       summary: { zh: '把一句话转交给桥接的 DSH（DeepSeek Harness）会话。', en: 'Hand one line over to the bridged DSH conversation.' },
     },
     {
+      name: 'dsh_sessions',
+      description: [
+        'List every DeepSeek Harness conversation that is open right now, and say which one the pet is aimed at.',
+        'Each row leads with the conversation\'s title — the name the person sees in DSH, and the only thing that tells "the bug-fix conversation" apart from "the one about the other repository". Read the titles before choosing: an id and a directory cannot say what a conversation is about.',
+        'DSH sends nothing when a person merely switches tabs, so the pet\'s aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means.',
+        'The list marks two things separately: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name.',
+        'Each row also says whether that conversation is running right now. A running one is still working, so silence from it is work in progress rather than an answer — do not hand it the same request twice just because it has not replied. A Host older than connector 0.2.23 cannot say, and then no state is shown at all; that is not the same as "idle".',
+        'dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
+        'An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.',
+      ].join(' '),
+      tags: ['speak'],
+      parameters: { type: 'object', properties: {} },
+      summary: { zh: '列出 DSH 此刻开着的会话，并标出默认送到哪一个。', en: 'List the DSH conversations open right now and mark where a line lands by default.' },
+    },
+    {
       name: 'dsh_pick_session',
       description:
         'Point this pet at a different DeepSeek Harness session, by its id. ' +
-        'By default the pet follows the newest open conversation; use this when the person wants your words to go into an older one ' +
-        '(for example after archiving the current session). It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.',
+        "Use it when the person names a conversation, and before speaking into one whose id you read from dsh_sessions instead of guessing: a line without a pin follows the Host's owner, which DSH never updates when a tab is merely switched. " +
+        'It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.',
       tags: ['speak'],
       parameters: {
         type: 'object',

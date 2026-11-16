@@ -506,6 +506,18 @@ export class FatfishWorld implements World {
   }
 
   /**
+   * The conversation the next line should go into, or null when the pet has no opinion.
+   *
+   * It is the pinned session when the person pinned one, otherwise null: a targetless line lets the
+   * Host deliver to its owner, which is the behaviour a person who never pinned anything expects.
+   * This exists so `dsh_send` can pass it and the Host can refuse a conversation that went away
+   * instead of silently writing into a different one.
+   */
+  private get aimedSession(): string | null {
+    return this.pinnedSession;
+  }
+
+  /**
    * One of the person's lines into DSH, followed by a notice saying the bridge already carried it.
    *
    * Without that notice the bot sees the person's words arrive with no sign that DSH has them, and
@@ -516,12 +528,15 @@ export class FatfishWorld implements World {
    * with `dsh_send` if it judges the line never arrived. Receipts are optional (`announce`): the
    * pet's own lines ride silently, since the bot has nothing to re-send and a notice would only
    * invite it to comment.
+   *
+   * A pinned session is named on the frame, so a pin that was archived underneath us is refused
+   * rather than quietly delivered into whatever conversation the Host picked next.
    */
   private async sayToDsh(text: string, sourceCursor: number, announce = true): Promise<void> {
     const client = this.client;
     if (!client) return;
-    const refusal = await client.say(text);
-    if (refusal === null) {
+    const outcome = await client.say(text, this.aimedSession ?? undefined);
+    if (outcome.ok) {
       this.handedOver.add(sourceCursor);
       if (announce) {
         const shown = text.length > 120 ? `${text.slice(0, 120)}…` : text;
@@ -529,12 +544,12 @@ export class FatfishWorld implements World {
       }
       return;
     }
-    if (refusal === 'unsent') {
+    if (outcome.code === 'unsent') {
       this.hold(text, sourceCursor);
       return;
     }
     if (announce) {
-      this.pushNotice(`[DSH] 有一句没有转交成功（${refusal}）。它可能已到达也可能没有；若你认为没到，可用 dsh_send 重发。`, { kind: 'relay-failed', text, cursor: sourceCursor });
+      this.pushNotice(`[DSH] 有一句没有转交成功（${outcome.reason}）。它可能已到达也可能没有；若你认为没到，可用 dsh_send 重发。`, { kind: 'relay-failed', text, cursor: sourceCursor });
     }
   }
 
@@ -703,9 +718,13 @@ export class FatfishWorld implements World {
     if (!this.handoverSeedPending) return;
     this.handoverSeedPending = false;
     const seed = '[交接] 新会话。先读 CONSTITUTION.md 和 PARTNER.md,再看 partner/交接.md,然后接着干。';
-    const result = await this.client?.say(seed);
+    // The seed belongs in the conversation just created, so it names it explicitly: a bare say here
+    // would race the Host's owner and could land in the conversation being handed over from.
+    const outcome = await this.client?.say(seed, this.pinnedSession ?? this.session);
     this.handoverStarted = false;
-    if (result && result !== 'unsent') this.pushNotice(`[DSH] 交接首句投递失败：${result}`, { kind: 'handover-failed' });
+    if (outcome && !outcome.ok && outcome.code !== 'unsent') {
+      this.pushNotice(`[DSH] 交接首句投递失败：${outcome.reason}`, { kind: 'handover-failed' });
+    }
   }
 
   /**
@@ -938,7 +957,8 @@ export class FatfishWorld implements World {
             ? 'The person\'s own lines reach DSH through the bridge itself, and the notice that follows one says it arrived; hand over a line only when you have seen no such notice.'
             : 'The person\'s own lines do not reach DSH on their own: hand over the ones that belong in that conversation, in their own words where you have them.',
           'DSH writes the pet\'s name in a prefix of its own, so text that already carries one arrives inside a second.',
-          'The receipt says whether DSH accepted it. Do not call it to narrate what you are doing.',
+          'The receipt names the conversation that took the line, and the answer to a refused line says why and carries every open conversation, so re-aim with dsh_pick_session instead of trying again blind.',
+          'Do not call it to narrate what you are doing.',
         ].join(' '),
         tags: ['speak'],
         parameters: {
@@ -952,15 +972,68 @@ export class FatfishWorld implements World {
           const text = typeof args.text === 'string' ? args.text : '';
           if (!text.trim()) return t.sendFailed.replace('{reason}', 'empty message');
           if (!this.client) return t.sendFailed.replace('{reason}', t.notConnected);
-          const refusal = await this.client.say(text);
-          return refusal === null ? t.sent : t.sendFailed.replace('{reason}', refusal);
+          const outcome = await this.client.say(text, this.aimedSession ?? undefined);
+          if (outcome.ok) {
+            // The Host names the conversation that took the line: say which one, so the bot can tell
+            // its own aim from the Host's fallback when no pin was set.
+            return outcome.session ? t.sentInto.replace('{session}', outcome.session) : t.sent;
+          }
+          const why = outcome.code === 'unsent' ? t.notConnected : outcome.reason;
+          return t.sendFailed.replace('{reason}', why);
+        },
+      },
+      {
+        name: 'dsh_sessions',
+        description: [
+          'List every DeepSeek Harness conversation that is open right now, and say which one the pet is aimed at.',
+          'Each row leads with the conversation\'s title — the name the person sees in DSH, and the only thing that tells "the bug-fix conversation" apart from "the one about the other repository". Read the titles before choosing: an id and a directory cannot say what a conversation is about.',
+          'DSH sends nothing when a person merely switches tabs, so the pet\'s aim can be minutes or hours out of date; ask for this list before handing over a line whenever you are not sure which conversation the person means.',
+          'The list marks two things separately: the conversation this pet is aimed at, and the one a line lands in when the pet is not aimed anywhere. They differ after the person speaks somewhere else, and the aim is what a line handed over now will name.',
+          'Each row also says whether that conversation is running right now. A running one is still working, so silence from it is work in progress rather than an answer — do not hand it the same request twice just because it has not replied. A Host older than connector 0.2.23 cannot say, and then no state is shown at all; that is not the same as "idle".',
+          'dsh_pick_session takes an id from this list, and dsh_new_session starts one that is not on it.',
+          'An empty list means there is no conversation to speak into: start one with dsh_new_session instead of sending.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: { type: 'object', properties: {} },
+        handler: async () => {
+          if (!this.client) return t.workspacesFailed.replace('{reason}', t.notConnected);
+          const list = await this.client.listSessions();
+          if (!list) return t.sessionsFailed.replace('{reason}', 'DSH did not answer the session list');
+          const open = list.sessions.filter((row) => !row.subagent);
+          if (open.length === 0) return t.sessionsEmpty;
+          const rows = open.map((row) => {
+            // Two separate marks, because they answer two different questions. "Where this pet is
+            // aimed" is the pin the bot set; "where a line lands without a pin" is the Host's owner.
+            // They disagree right after the person speaks in another conversation, and a single
+            // combined mark is how the bot came to announce the wrong one as its own target.
+            const marks: string[] = [];
+            // Not an `else`: right after dsh_pick_session the Host reports the same session as
+            // owner and as pinned, so one row is genuinely both. Suppressing the current mark
+            // there left the list with no landing row at all, which reads as "an unpinned line
+            // goes nowhere" — the same misreading of this list the two marks exist to prevent.
+            if (this.pinnedSession === row.id) marks.push(t.sessionsAimMark);
+            if (row.owner) marks.push(t.sessionsCurrentMark);
+            if (row.pinned && row.owner) marks.push(t.sessionsPinnedMark);
+            // Whether a turn is open right now. An older Host sends no `running` at all, and that
+            // is not the same answer as "idle": saying "idle" on its behalf would tell the bot a
+            // conversation is free to take a line when nobody has checked. So: report it when the
+            // Host reports it, stay silent when it does not.
+            if (row.running === true) marks.push(t.sessionsRunningMark);
+            else if (row.running === false) marks.push(t.sessionsIdleMark);
+            const tail = marks.length > 0 ? `  ${marks.join(' ')}` : '';
+            // The title goes first: it is the only field that says what the conversation is about,
+            // and a Host older than 0.2.22 sends none, so fall back to the directory it does send.
+            const name = row.title && row.title.trim() !== '' ? row.title : t.sessionsUntitled;
+            return `- ${name}  ${row.id}  ${row.cwd}${tail}`;
+          });
+          return t.sessionsDone.replace('{list}', rows.join('\n'));
         },
       },
       {
         name: 'dsh_pick_session',
         description: [
           'Point this pet at a different DeepSeek Harness session, by its id.',
-          'By default the pet follows the newest open conversation; use this when the person wants your words to go into an older one (for example after archiving the current session).',
+          'Use it when the person names a conversation, and before speaking into one whose id you read from dsh_sessions instead of guessing: a line without a pin follows the Host\'s owner, which DSH never updates when a tab is merely switched.',
           'It only accepts a session that is still open on the DSH side; a closed or unknown id is refused.',
         ].join(' '),
         tags: ['speak'],
@@ -976,7 +1049,12 @@ export class FatfishWorld implements World {
           if (!session.trim()) return '未指定会话 id。';
           if (!this.client) return t.notConnected;
           const refusal = await this.client.pick(session);
-          return refusal === null ? `已切换到 DSH 会话 ${session}。` : `切换失败：${refusal}`;
+          if (refusal) return `切换失败：${refusal}`;
+          // Remember the pin locally too: the next line names it, so a Host that later loses the pin
+          // refuses instead of quietly writing into whatever conversation it fell back to.
+          this.pinnedSession = session;
+          this.session = session;
+          return `已切换到 DSH 会话 ${session}，之后的话都会送到那里。`;
         },
       },
       {

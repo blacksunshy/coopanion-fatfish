@@ -148,9 +148,23 @@ describe('a line the pet sends', () => {
     const client = open.at(-1)!.client;
     // the greeting lands first; the say waits for the Host's answer
     await until(() => hellos.length >= 1);
-    const refusal = await client.say('让小鲸鱼说句话');
-    expect(refusal).toBeNull();
+    const outcome = await client.say('让小鲸鱼说句话');
+    expect(outcome).toMatchObject({ ok: true });
     expect(hellos[1]).toMatchObject({ t: 'say', text: '让小鲸鱼说句话', from: 'Coo' });
+    // No target named: the frame stays the exact old shape, so an older Host sees nothing new.
+    expect(hellos[1]).not.toHaveProperty('session');
+  });
+
+  it('names the conversation the person aimed at', async () => {
+    const { hellos } = await hosting((socket, hello) => {
+      if (hello.t === 'hello') socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+      else socket.send(JSON.stringify({ t: 'accepted', id: hello.id, session: 's-old' }));
+    });
+    const client = open.at(-1)!.client;
+    await until(() => hellos.length >= 1);
+    const outcome = await client.say('这里说', 's-old');
+    expect(outcome).toMatchObject({ ok: true, session: 's-old' });
+    expect(hellos[1]).toMatchObject({ t: 'say', text: '这里说', session: 's-old' });
   });
 
   it('reports the reason DSH refused it', async () => {
@@ -160,7 +174,25 @@ describe('a line the pet sends', () => {
     });
     const client = open.at(-1)!.client;
     await until(() => hellos.length >= 1);
-    expect(await client.say('hi')).toBe('no conversation is open on the DSH side');
+    expect(await client.say('hi')).toMatchObject({
+      ok: false,
+      reason: 'no conversation is open on the DSH side',
+    });
+  });
+
+  it('carries the reason code and the list a refused line can be re-aimed from', async () => {
+    const rows = [{ id: 's2', cwd: '/w', model: 'm', owner: true, pinned: false, subagent: false }];
+    const { hellos } = await hosting((socket, hello) => {
+      if (hello.t === 'hello') socket.send(JSON.stringify({ t: 'ready', v: PROTOCOL_VERSION, session: 's1' }));
+      else socket.send(JSON.stringify({ t: 'refused', id: hello.id, reason: 'gone', code: 'stale-session', sessions: rows }));
+    });
+    const client = open.at(-1)!.client;
+    await until(() => hellos.length >= 1);
+    const outcome = await client.say('hi', 's-gone');
+    expect(outcome).toMatchObject({ ok: false, code: 'stale-session' });
+    expect(outcome.ok ? [] : outcome.sessions).toEqual(rows);
+    // The list in hand is updated too, so the next line can be aimed without asking again.
+    expect(client.knownSessions()).toEqual(rows);
   });
 
   it('reports unsent without writing when there is no connection', async () => {
@@ -172,7 +204,7 @@ describe('a line the pet sends', () => {
       log: () => {},
     });
     // 'unsent' means the line provably never left, so the caller may queue it for a later bridge.
-    expect(await client.say('hi')).toBe('unsent');
+    expect(await client.say('hi')).toMatchObject({ ok: false, reason: 'unsent', code: 'unsent' });
   });
 });
 
@@ -278,7 +310,7 @@ describe('a conversation the pet asks for', () => {
     });
     await until(() => client.connected);
     const [said, made] = await Promise.all([client.say('你好'), client.newSession()]);
-    expect(said).toBe('no conversation is open on the DSH side');
+    expect(said).toMatchObject({ ok: false, reason: 'no conversation is open on the DSH side' });
     expect(made).toEqual({ ok: true, session: 's-new' });
   });
 

@@ -201,6 +201,189 @@ describe('a line the bot hands to DSH', () => {
     expect(world.envPromptVars()['dsh.status']).toBe('off');
     await world.stop();
   });
+
+  it('names the conversation the person pinned, so the Host cannot quietly fall back', async () => {
+    const { world, fromPet } = await withHost((socket, frame) => {
+      if (frame.t === 'pick') socket.send(JSON.stringify({ t: 'picked', session: 'session-old' }));
+      if (frame.t === 'say') socket.send(JSON.stringify({ t: 'accepted', id: frame.id, session: 'session-old' }));
+    });
+    const pick = world.tools().find((t) => t.name === 'dsh_pick_session')!;
+    expect(await pick.handler({ session: 'session-old' }, {} as never)).toContain('session-old');
+    const send = world.tools().find((t) => t.name === 'dsh_send')!;
+    // The receipt names the conversation that took the line, so the bot can see its aim held.
+    expect(await send.handler({ text: '在这边说' }, {} as never)).toBe('已交给 DSH（会话 session-old）。');
+    expect(fromPet.find((f) => f.t === 'say')).toMatchObject({ text: '在这边说', session: 'session-old' });
+  });
+
+  it('passes on the reason a stale target was refused, so the bot can re-aim', async () => {
+    const rows = [{ id: 'session-9', cwd: '/w', model: 'deepseek-flash', owner: true, pinned: false, subagent: false }];
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'pick') socket.send(JSON.stringify({ t: 'picked', session: 'session-gone' }));
+      if (frame.t === 'say') {
+        socket.send(JSON.stringify({
+          t: 'refused',
+          id: frame.id,
+          reason: 'conversation session-gone is no longer open',
+          code: 'stale-session',
+          sessions: rows,
+        }));
+      }
+    });
+    const pick = world.tools().find((t) => t.name === 'dsh_pick_session')!;
+    await pick.handler({ session: 'session-gone' }, {} as never);
+    const send = world.tools().find((t) => t.name === 'dsh_send')!;
+    expect(await send.handler({ text: 'hi' }, {} as never))
+      .toBe('没有交给 DSH：conversation session-gone is no longer open');
+    // The refusal's list is kept in hand, so dsh_sessions answers from it without another round trip.
+    expect((world as unknown as { client: { knownSessions(): unknown } }).client.knownSessions()).toEqual(rows);
+  });
+});
+
+describe('the conversations the bot can see', () => {
+  it('lists every open one by the title the person knows it by', async () => {
+    // An id and a directory cannot say what a conversation is about, so a bot holding only those
+    // guesses — and a guess is how a line lands in the wrong window. DSH keeps the title in the
+    // log; connector 0.2.22 passes it along as `title`.
+    const { world, fromPet } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        owner: 'session-9',
+        sessions: [
+          { id: 'session-9', cwd: '/w', title: '修复桌宠会话错发', model: 'deepseek-flash', owner: true, pinned: false, subagent: false },
+          { id: 'session-old', cwd: '/w/fish', title: '鱼的语料整理', model: 'hy4free', owner: false, pinned: false, subagent: false },
+          { id: 'session-sub', cwd: '/w', title: '子任务', model: 'm', owner: false, pinned: false, subagent: true },
+        ],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = await tool.handler({}, {} as never);
+    expect(fromPet.some((f) => f.t === 'list-sessions')).toBe(true);
+    expect(receipt).toContain('修复桌宠会话错发  session-9  /w  （默认送到这里）');
+    expect(receipt).toContain('鱼的语料整理  session-old  /w/fish');
+    // A subagent is not a conversation the person can talk in.
+    expect(receipt).not.toContain('session-sub');
+  });
+
+  it('says so when a conversation has no title yet', async () => {
+    // A conversation nobody has spoken in is not named by DSH, and a Host older than 0.2.22 sends
+    // no title at all; both must read as "untitled" rather than as a different conversation.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        sessions: [{ id: 'session-new', cwd: '/w', model: 'm', owner: true, pinned: false, subagent: false }],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('（还没起名）  session-new  /w  （默认送到这里）');
+  });
+
+  it('keeps its own aim apart from where the Host would land a line', async () => {
+    // The person spoke in session-9, so the Host's owner moved there, but this bot is still aimed
+    // at session-old. Marking both as "current" is what made it announce the wrong one as its own
+    // target — the two marks must be distinguishable, and neither may claim the other's row.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'pick') socket.send(JSON.stringify({ t: 'picked', session: 'session-old' }));
+      if (frame.t === 'list-sessions') {
+        socket.send(JSON.stringify({
+          t: 'session-list',
+          pinned: true,
+          owner: 'session-9',
+          sessions: [
+            { id: 'session-9', cwd: '/w', title: '修复桌宠会话错发', model: 'deepseek-flash', owner: true, pinned: false, subagent: false },
+            { id: 'session-old', cwd: '/w/fish', title: '鱼的语料整理', model: 'hy4free', owner: false, pinned: true, subagent: false },
+          ],
+        }));
+      }
+    });
+    const pick = world.tools().find((t) => t.name === 'dsh_pick_session')!;
+    await pick.handler({ session: 'session-old' }, {} as never);
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('修复桌宠会话错发  session-9  /w  （默认送到这里）');
+    expect(receipt).toContain('鱼的语料整理  session-old  /w/fish  （你就指着这里）');
+    // The aim mark belongs to the pinned row only, and the current mark to the Host's owner only.
+    expect(receipt.match(/（你就指着这里）/g)).toHaveLength(1);
+    expect(receipt.match(/（默认送到这里）/g)).toHaveLength(1);
+  });
+
+  it('marks one row as both aim and landing when the Host pinned the same session', async () => {
+    // What the person saw in a live run: dsh_pick_session on the session the Host already owned
+    // made the connector report that row as owner AND pinned, and the list then showed neither
+    // "（默认送到这里）" anywhere — it read as if nothing would land anywhere without a pin.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'pick') socket.send(JSON.stringify({ t: 'picked', session: 'session-9' }));
+      if (frame.t === 'list-sessions') {
+        socket.send(JSON.stringify({
+          t: 'session-list',
+          pinned: true,
+          owner: 'session-9',
+          sessions: [
+            { id: 'session-9', cwd: '/w', title: '修复桌宠会话错发', model: 'deepseek-flash', owner: true, pinned: true, subagent: false },
+            { id: 'session-old', cwd: '/w/fish', title: '鱼的语料整理', model: 'hy4free', owner: false, pinned: false, subagent: false },
+          ],
+        }));
+      }
+    });
+    const pick = world.tools().find((t) => t.name === 'dsh_pick_session')!;
+    await pick.handler({ session: 'session-9' }, {} as never);
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('修复桌宠会话错发  session-9  /w  （你就指着这里） （默认送到这里） （已固定）');
+    expect(receipt).toContain('鱼的语料整理  session-old  /w/fish');
+    expect(receipt.match(/（默认送到这里）/g)).toHaveLength(1);
+    expect(receipt.match(/（你就指着这里）/g)).toHaveLength(1);
+  });
+
+  it('says which conversations are working right now', async () => {
+    // "still thinking" and "never answered" look identical to a bot that cannot see this, and the
+    // honest response to each is the opposite: wait, or hand the line over again.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        owner: 'session-9',
+        sessions: [
+          { id: 'session-9', cwd: '/w', title: '修复桌宠会话错发', model: 'm', running: true, owner: true, pinned: false, subagent: false },
+          { id: 'session-old', cwd: '/w/fish', title: '鱼的语料整理', model: 'm', running: false, owner: false, pinned: false, subagent: false },
+        ],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).toContain('修复桌宠会话错发  session-9  /w  （默认送到这里） （正在跑）');
+    expect(receipt).toContain('鱼的语料整理  session-old  /w/fish  （空闲）');
+  });
+
+  it('shows no state at all when the Host cannot say', async () => {
+    // Absent is not idle. A Host older than connector 0.2.23 sends no `running`, and printing
+    // "（空闲）" on its behalf would promise a free conversation nobody has checked.
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t !== 'list-sessions') return;
+      socket.send(JSON.stringify({
+        t: 'session-list',
+        pinned: false,
+        sessions: [{ id: 'session-9', cwd: '/w', model: 'm', owner: true, pinned: false, subagent: false }],
+      }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    const receipt = (await tool.handler({}, {} as never)) as string;
+    expect(receipt).not.toContain('（正在跑）');
+    expect(receipt).not.toContain('（空闲）');
+  });
+
+  it('says there is nothing to speak into when the list is empty', async () => {
+    const { world } = await withHost((socket, frame) => {
+      if (frame.t === 'list-sessions') socket.send(JSON.stringify({ t: 'session-list', pinned: false, sessions: [] }));
+    });
+    const tool = world.tools().find((t) => t.name === 'dsh_sessions')!;
+    expect(await tool.handler({}, {} as never)).toBe('DSH 里没有开着的会话——先新建一个再说话。');
+  });
 });
 
 describe('a conversation the bot starts in a named workspace', () => {
