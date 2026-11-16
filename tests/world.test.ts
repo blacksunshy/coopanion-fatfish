@@ -767,3 +767,71 @@ describe('a question the assistant asks (askRemind)', () => {
     expect(notices(host)[0]).toContain('批准 write');
   });
 });
+
+describe('a prompt the person lets the pet answer', () => {
+  /** The tool of that name, or a failure that says the switch did not open the door. */
+  const tool = (world: FatfishWorld, name: string) => {
+    const found = world.tools().find((entry) => entry.name === name);
+    expect(found).toBeDefined();
+    return found!;
+  };
+
+  it('is announced with the request id, and dsh_approve sends the decision back on that id', async () => {
+    const { world, host, fromPet } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'request', id: 'req-1', kind: 'approval', tool: 'shell', reason: '写文件' }));
+    }, { answerForMe: true, ttsEnabled: false });
+
+    await until(() => notices(host).some((text) => text.includes('req-1')));
+    const notice = notices(host).find((text) => text.includes('req-1'))!;
+    expect(notice).toContain('shell');
+    expect(notice).toContain('写文件');
+    expect(notice).toContain('dsh_approve');
+
+    expect(await tool(world, 'dsh_approve').handler({ decision: 'allowed-once' }, {} as never)).toContain('shell');
+    await until(() => fromPet.some((entry) => entry.t === 'answer'));
+    expect(fromPet.find((entry) => entry.t === 'answer')).toMatchObject({ id: 'req-1', decision: 'allowed-once' });
+  });
+
+  it('answers a question with the exact label, and refuses one DSH never offered', async () => {
+    const { world, host, fromPet } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({
+        t: 'request',
+        id: 'req-2',
+        kind: 'question',
+        questions: [{ id: 'q1', question: '用哪个方案？', options: [{ label: '甲' }, { label: '乙' }] }],
+      }));
+    }, { answerForMe: true, ttsEnabled: false });
+
+    await until(() => notices(host).some((text) => text.includes('甲 / 乙')));
+    expect(notices(host).join('\n')).toContain('question id：q1');
+
+    const answer = tool(world, 'dsh_answer');
+    expect(await answer.handler({ selections: [{ question: 'q1', selected: ['丙'] }] }, {} as never)).toContain('丙');
+    expect(fromPet.some((entry) => entry.t === 'answer')).toBe(false);
+    expect(await answer.handler({ selections: [{ question: 'q1', selected: ['甲', '乙'] }] }, {} as never)).toContain('只能选一项');
+
+    expect(await answer.handler({ id: 'req-2', selections: [{ question: 'q1', selected: ['乙'] }] }, {} as never)).toContain('1 个问题');
+    await until(() => fromPet.some((entry) => entry.t === 'answer'));
+    expect(fromPet.find((entry) => entry.t === 'answer')).toMatchObject({ id: 'req-2', answers: [{ id: 'q1', selected: ['乙'] }] });
+  });
+
+  it('forgets a prompt once DSH closes it', async () => {
+    const { world, host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({ t: 'request', id: 'req-3', kind: 'approval', tool: 'shell' }));
+      setTimeout(() => socket.send(JSON.stringify({ t: 'request-end', id: 'req-3', outcome: 'expired' })), 80);
+    }, { answerForMe: true, ttsEnabled: false });
+
+    await until(() => notices(host).some((text) => text.includes('req-3')));
+    await new Promise((done) => setTimeout(done, 160));
+    expect(await tool(world, 'dsh_approve').handler({ decision: 'rejected' }, {} as never)).toContain('没有等你决定');
+  });
+
+  it('does not offer the click tools while the switch is off', async () => {
+    const { world } = await withHost(undefined, { answerForMe: false, ttsEnabled: false });
+    expect(world.tools().some((entry) => entry.name === 'dsh_approve')).toBe(false);
+    expect(world.tools().some((entry) => entry.name === 'dsh_answer')).toBe(false);
+  });
+});

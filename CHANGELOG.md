@@ -1,6 +1,15 @@
 # 更新说明
 
-## 0.6.25 — 未发布
+## 0.6.26 — 已发布（GitHub Release）
+
+- **新增「替人物点 DSH 的选项与批准」（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19) 里 qwq-awa-qnq 的建议，需 connector-dsh ≥ 0.2.25）**：设置里打开 `answerForMe`（默认关）后，小肥鱼连上 DSH 时在 `hello` 里声明 `caps: ['answers']`；DSH 弹出批准或 `ask_user_question` 时请求直接发过来，它用两个新工具回决定——`dsh_approve`（`allowed-once` / `rejected` / `cancelled`）与 `dsh_answer`（按选项 label 选择，支持多选与自定义文本），你不在键鼠前也能让它代点
+- **只点你自己的会话**：Host 只在桌宠拥有的那个会话里接管，别处的提问照旧交还桌面；请求带编号与工具名进通知，5 分钟没处理由 Host 自动过期交还，断线时本地待决请求一起清空
+- **默认关闭、旧组合不受影响**：开关关着就不声明能力、也不暴露这两个工具，Host 继续按原来的批准 / 问句通知路径工作；`notify` 各档位行为不变
+- 与 Host 侧配对：`coopanion-connector-dsh ≥ 0.2.25`（`request` / `request-end` / `answer` 帧）
+- 本版同时发布 main 上累积的 0.6.22 ~ 0.6.25（`dsh_sessions` 清单、指名投递、固定与落点分开、会话标题、运行状态）
+- 测试：`tsc --noEmit` 通过，`vitest` 全绿（新增请求帧解析、`dsh_approve` / `dsh_answer` 的 label 往返与单选/多选/未知选项拒绝、请求过期与开关关闭四条路径）
+
+## 0.6.25 — 已发布（GitHub Release）
 
 - **新增：`dsh_sessions` 每行带「正在跑 / 空闲」**（半星star 追加的需求）。此前清单能告诉桌宠「有哪些会话、叫什么」，但说不出「那边现在是不是还在干活」——于是同一件事被重复发一遍，或者把「还在想」当成「没回答」。现在：
   - Host 报 `running: true` 的行带「（正在跑）」：那边的沉默是「还在干活」，不是「没回答你」，别因为没立刻收到回复就重发同一件事
@@ -10,7 +19,7 @@
 - **配套**：`coopanion-connector-dsh` ≥ 0.2.23 才会送 `running`；它取 DSH 自己的 `agent.status`，读不到时退回 `turn/start`／`turn/end` 的跟读
 - 测试：`tsc --noEmit` 通过；`vitest` **108 passed**（新增「正在跑／空闲分别标出」「Host 报不出状态时两样都不显示」）；`describe.json` 由 `scripts/emit-describe.mjs` 重新生成；`dist/webui.js` 已重建
 
-## 0.6.24 — 未发布
+## 0.6.24 — 已发布（GitHub Release）
 
 - **新增：`dsh_sessions` 每行带会话标题**（半星star 提的需求：让 DSH 的每个会话都能被桌宠感知，给标题就够它自己认路）。此前每行只有 `id` + 工作目录，桌宠分不出「修桌宠发错会话的」和「整理鱼语料的那份」，只能猜；猜就是发错的起点。现在：
   - 行格式由 `- {id}  {cwd}` 变为 `- {标题}  {id}  {cwd}`，标题在前——它是唯一说明"这个会话在聊什么"的字段

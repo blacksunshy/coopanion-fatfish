@@ -144,6 +144,12 @@ export interface FatfishConfigSection {
    * default; independent of `notify`, because it never wakes the bot.
    */
   askRemind: boolean;
+  /**
+   * Lets the pet answer DSH's prompts: approvals and `ask_user_question` cards are offered to it,
+   * and the bot may click one after the person has said what they want. Off by default — an
+   * approval grants a permission on the person's behalf, so it must be their switch, not ours.
+   */
+  answerForMe: boolean;
   // ---- the voice half ----
   /** Reads the pet's replies aloud. */
   ttsEnabled: boolean;
@@ -190,6 +196,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   relayPet: false,
   notify: 'results',
   askRemind: false,
+  answerForMe: false,
   ttsEnabled: true,
   engine: 'edge',
   httpUrl: '',
@@ -286,6 +293,7 @@ export function fatfishConfigGroups(language: Language = 'zh'): ConfigGroup[] {
           [at('relayPet')]: { type: 'boolean', title: t.relayPet, description: t.relayPetHint, 'x-hot': false },
           [at('notify')]: { type: 'string', title: t.notify, description: t.notifyHint, 'x-options': NOTIFY_OPTIONS_KIND, 'x-hot': true },
           [at('askRemind')]: { type: 'boolean', title: t.askRemind, description: t.askRemindHint, 'x-hot': true },
+          [at('answerForMe')]: { type: 'boolean', title: t.answerForMe, description: t.answerForMeHint, 'x-hot': true },
         },
       },
     },

@@ -242,6 +242,17 @@ describe('a frame this pet does not understand', () => {
     expect(parseHostFrame('{"t":"turn-end","turn":2,"reason":"completed"}')).toEqual({ t: 'turn-end', turn: 2, reason: 'completed' });
     expect(
       parseHostFrame(
+        '{"t":"request","id":"r1","kind":"question","questions":[{"id":"q1","question":"选哪个","options":[{"label":"甲","description":"先做甲"}]}]}',
+      ),
+    ).toEqual({
+      t: 'request',
+      id: 'r1',
+      kind: 'question',
+      questions: [{ id: 'q1', question: '选哪个', options: [{ label: '甲', description: '先做甲' }] }],
+    });
+    expect(parseHostFrame('{"t":"request-end","id":"r1","outcome":"expired"}')).toEqual({ t: 'request-end', id: 'r1', outcome: 'expired' });
+    expect(
+      parseHostFrame(
         '{"t":"session-list","pinned":true,"sessions":[{"id":"a","cwd":"/w","model":"m","owner":true,"pinned":true,"subagent":false}]}',
       ),
     ).toEqual({
@@ -258,6 +269,9 @@ describe('a frame this pet does not understand', () => {
     expect(parseHostFrame('{"t":"ready","session":"s"}')).toBeNull();
     expect(parseHostFrame('{"t":"something-new","x":1}')).toBeNull();
     expect(parseHostFrame('{"t":"reply"}')).toBeNull();
+    expect(parseHostFrame('{"t":"request","kind":"approval"}')).toBeNull();
+    expect(parseHostFrame('{"t":"request","id":"r","kind":"promise"}')).toBeNull();
+    expect(parseHostFrame('{"t":"request-end","id":"r"}')).toBeNull();
   });
 });
 

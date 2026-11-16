@@ -93,6 +93,9 @@ export interface FatfishText {
     /** The question reminder: a fixed line instead of a bot wake. */
     askRemind: string;
     askRemindHint: string;
+    /** The switch that lets the pet answer DSH approvals and question cards. */
+    answerForMe: string;
+    answerForMeHint: string;
     // the voice group
     voiceTitle: string;
     ttsEnabled: string;
@@ -184,6 +187,30 @@ export interface FatfishText {
     workspacesFailed: string;
     /** `dsh_new_session` failed; `{reason}` is DSH's own wording. */
     newSessionFailed: string;
+    /** `dsh_approve` found no approval waiting. */
+    answerNonePending: string;
+    /** Several prompts are pending and the call named none; `{ids}` lists them. */
+    answerPickOne: string;
+    /** The named request id is unknown or already closed. */
+    answerNoSuchRequest: string;
+    /** A question was answered with `dsh_approve`, or an approval with `dsh_answer`. */
+    answerWrongKind: string;
+    /** A selection names a question id the notice never offered. */
+    answerUnknownQuestion: string;
+    /** A selection names a label the options do not contain; `{options}` lists the real ones. */
+    answerUnknownOption: string;
+    /** One label per question where the question is single-choice. */
+    answerSingleChoice: string;
+    /** Neither a label nor free text was given for a question. */
+    answerNothingPicked: string;
+    /** `decision` was not one of the three the Host accepts. */
+    answerBadDecision: string;
+    /** The bridge was down, so the answer never left. */
+    answerUnsent: string;
+    /** `dsh_approve` succeeded; `{tool}` is the tool that was approved. */
+    approved: string;
+    /** `dsh_answer` succeeded; `{count}` answers were submitted. */
+    answered: string;
   };
 }
 

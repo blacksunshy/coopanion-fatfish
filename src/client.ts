@@ -52,6 +52,30 @@ export type HostFrame =
   | { t: 'question'; text: string; callId?: string }
   /** The question above was answered, skipped or timed out; stop any reminder. */
   | { t: 'question-end'; callId: string }
+  /**
+   * A prompt the pet itself may answer: an approval or an `ask_user_question` card.
+   *
+   * Only a pet that declared `answers` in `hello` receives these — the Host takes that declaration
+   * as the person's switch. `options[].label` is what `answer` names, so no index has to survive
+   * the round trip.
+   */
+  | {
+      t: 'request';
+      id: string;
+      kind: 'approval' | 'question';
+      tool?: string;
+      reason?: string;
+      questions?: Array<{
+        id: string;
+        question: string;
+        detail?: string;
+        header?: string;
+        options?: Array<{ label: string; description?: string }>;
+        multiSelect?: boolean;
+      }>;
+    }
+  /** The request above is over: answered from here, answered on the desktop, or expired. */
+  | { t: 'request-end'; id: string; outcome: 'answered' | 'expired' | 'cancelled' }
   | { t: 'error'; text: string }
   /** The words were delivered: `session` names the conversation that took them. */
   | { t: 'accepted'; id: string; session?: string; sessions?: SessionRow[]; pinned?: boolean }
@@ -91,6 +115,11 @@ export interface DshClientOptions {
   url(): string;
   /** What the Host is told about this pet on connect. */
   name(): string;
+  /**
+   * What this pet can do beyond the base protocol, read at each connect. `answers` tells the Host
+   * it may offer approvals and questions here; an empty list keeps the old notice-only behaviour.
+   */
+  caps?(): string[];
   /** A frame from the Host; `ready` means the connection is usable. */
   onFrame(frame: HostFrame): void;
   /** Connection state changed; false covers both a failed attempt and a dropped socket. */
@@ -441,6 +470,29 @@ export class DshClient {
     });
   }
 
+  /**
+   * Answer a prompt the Host offered: a decision for an approval, a batch of labels for questions.
+   *
+   * Fire-and-forget by design — the Host closes the exchange with `request-end`, and an answer to a
+   * request that already timed out is dropped there. Returns false when the bridge is down, so the
+   * caller can say the click never left instead of pretending it landed.
+   */
+  answer(
+    id: string,
+    payload: {
+      decision?: 'allowed-once' | 'rejected' | 'cancelled';
+      answers?: Array<{ id: string; selected: string[]; custom?: string }>;
+    },
+  ): boolean {
+    if (!this.connected || !id) return false;
+    try {
+      this.socket!.send(JSON.stringify({ t: 'answer', id, ...payload }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private connect(): void {
     if (this.stopped) return;
     let socket: WebSocket;
@@ -453,7 +505,10 @@ export class DshClient {
     this.socket = socket;
     socket.on('open', () => {
       this.attempt = 0;
-      socket.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, name: this.opts.name() }));
+      const caps = this.opts.caps?.() ?? [];
+      socket.send(JSON.stringify(caps.length > 0
+        ? { t: 'hello', v: PROTOCOL_VERSION, name: this.opts.name(), caps }
+        : { t: 'hello', v: PROTOCOL_VERSION, name: this.opts.name() }));
     });
     socket.on('message', (data, isBinary) => {
       if (isBinary) return;
@@ -716,6 +771,55 @@ export function parseHostFrame(raw: string): HostFrame | null {
     case 'question-end': {
       const callId = str('callId');
       return callId === null ? null : { t: 'question-end', callId };
+    }
+    case 'request': {
+      const id = str('id');
+      if (id === null) return null;
+      const kind = frame.kind === 'approval' || frame.kind === 'question' ? frame.kind : null;
+      if (kind === null) return null;
+      const questions = Array.isArray(frame.questions)
+        ? frame.questions.flatMap((raw) => {
+            if (typeof raw !== 'object' || raw === null) return [];
+            const row = raw as Record<string, unknown>;
+            const questionId = typeof row.id === 'string' ? row.id : '';
+            if (!questionId) return [];
+            const options = Array.isArray(row.options)
+              ? row.options.flatMap((choice) => {
+                  if (typeof choice !== 'object' || choice === null) return [];
+                  const option = choice as Record<string, unknown>;
+                  if (typeof option.label !== 'string' || option.label === '') return [];
+                  return [{
+                    label: option.label,
+                    ...(typeof option.description === 'string' ? { description: option.description } : {}),
+                  }];
+                })
+              : undefined;
+            return [{
+              id: questionId,
+              question: typeof row.question === 'string' ? row.question : '',
+              ...(typeof row.detail === 'string' ? { detail: row.detail } : {}),
+              ...(typeof row.header === 'string' ? { header: row.header } : {}),
+              ...(options && options.length > 0 ? { options } : {}),
+              ...(typeof row.multiSelect === 'boolean' ? { multiSelect: row.multiSelect } : {}),
+            }];
+          })
+        : undefined;
+      return {
+        t: 'request',
+        id,
+        kind,
+        ...(typeof frame.tool === 'string' ? { tool: frame.tool } : {}),
+        ...(typeof frame.reason === 'string' ? { reason: frame.reason } : {}),
+        ...(questions && questions.length > 0 ? { questions } : {}),
+      };
+    }
+    case 'request-end': {
+      const id = str('id');
+      const outcome =
+        frame.outcome === 'answered' || frame.outcome === 'expired' || frame.outcome === 'cancelled'
+          ? frame.outcome
+          : null;
+      return id === null || outcome === null ? null : { t: 'request-end', id, outcome };
     }
     case 'error': {
       const text = str('text');

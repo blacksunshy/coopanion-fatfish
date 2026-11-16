@@ -195,6 +195,12 @@ export class FatfishWorld implements World {
   private turnPending: { turn: number; reply: string | null; tools: number; timer: NodeJS.Timeout | null } | null = null;
   /** Timers of the pending question reminder; empty when no question is waiting. */
   private askRemindTimers: NodeJS.Timeout[] = [];
+  /**
+   * Prompts the Host is holding for this pet: approvals and `ask_user_question` cards it offered
+   * because the person turned `answerForMe` on. Keyed by the id the Host accepts in `answer`.
+   * A `request-end` (answered, expired, cancelled) drops the entry.
+   */
+  private readonly pendingRequests = new Map<string, Extract<HostFrame, { t: 'request' }>>();
 
   constructor(private readonly opts: FatfishWorldOptions) {
     this.cachePath = opts.stateDir ? join(opts.stateDir, BRIDGE_CACHE) : null;
@@ -347,6 +353,9 @@ export class FatfishWorld implements World {
           return target;
         },
         name: () => this.opts.name?.() ?? 'Coopanion',
+        // The switch is the person's. Only when it is on does the Host offer prompts for the pet to
+        // answer; otherwise the pet keeps receiving the plain approval/question notices.
+        caps: () => (this.opts.cfg.answerForMe === true ? ['answers'] : []),
         onFrame: (frame) => void this.onFrame(frame),
         onState: (connected, session) => {
           const wasConnected = this.connected;
@@ -389,6 +398,9 @@ export class FatfishWorld implements World {
               else { this.handoverStarted = false; this.handoverSeedPending = false; }
             }
           } else if (this.discoverOn) {
+            // A prompt offered on the old connection died with it; the Host hands it back to the
+            // desktop, so keeping the id here would only offer a click that can no longer land.
+            this.pendingRequests.clear();
             void this.rediscover();
           }
         },
@@ -614,9 +626,22 @@ export class FatfishWorld implements World {
         rawSay(`[DSH] 等你批准 ${frame.name}`);
       } else if (frame.t === 'question') {
         rawSay(`[DSH] 等你回答：${frame.text}`);
+      } else if (frame.t === 'request') {
+        rawSay(this.requestLine(frame));
       } else if (frame.t === 'error') {
         rawSay(`[DSH] 出错：${frame.text}`);
       }
+      return;
+    }
+    // Prompts the Host offered for this pet to answer. The notice carries the request id, the
+    // options and the tool to call, so the model can act on the person's words without a lookup.
+    if (frame.t === 'request') {
+      this.rememberRequest(frame);
+      if (this.notifyMode !== 'off') this.pushNotice(this.requestNotice(frame), { kind: frame.kind, request: frame.id });
+      return;
+    }
+    if (frame.t === 'request-end') {
+      this.pendingRequests.delete(frame.id);
       return;
     }
     const mode = this.notifyMode;
@@ -879,6 +904,69 @@ export class FatfishWorld implements World {
     this.askRemindTimers = [];
   }
 
+  /** Keeps only the newest prompts, so a burst of questions cannot grow a list without bound. */
+  private rememberRequest(frame: Extract<HostFrame, { t: 'request' }>): void {
+    this.pendingRequests.delete(frame.id);
+    this.pendingRequests.set(frame.id, frame);
+    while (this.pendingRequests.size > 8) {
+      const oldest = this.pendingRequests.keys().next().value;
+      if (oldest === undefined) break;
+      this.pendingRequests.delete(oldest);
+    }
+  }
+
+  /** One line for the mouth-only path, where there is no model to hand the details to. */
+  private requestLine(frame: Extract<HostFrame, { t: 'request' }>): string {
+    if (frame.kind === 'approval') return `[DSH] 等你批准 ${frame.tool ?? 'tool'}`;
+    const first = frame.questions?.[0];
+    return first ? `[DSH] 等你回答：${first.question}` : '[DSH] 等你回答一个问题';
+  }
+
+  /**
+   * The notice that wakes the pet: the request id, the labels exactly as DSH shows them, and the
+   * tool to call. Wording is explicit that the decision is the person's — the pet is only the hand
+   * that clicks after they have spoken.
+   */
+  private requestNotice(frame: Extract<HostFrame, { t: 'request' }>): string {
+    if (frame.kind === 'approval') {
+      const tool = frame.tool ?? 'tool';
+      const reason = frame.reason ? `：${frame.reason}` : '';
+      return `[DSH] 正在等你批准 ${tool}${reason}。请求 id：${frame.id}。` +
+        '人物已经明确表态时，用 dsh_approve 替他点（decision = allowed-once / rejected / cancelled）；没表态就先把问题交给人物。';
+    }
+    const lines = (frame.questions ?? []).map((question, index) => {
+      const options = question.options?.length
+        ? ` 选项：${question.options.map((option) => option.label).join(' / ')}`
+        : ' （没有给选项，需要人物自己输入）';
+      return `${index + 1}. ${question.question || '(未命名问题)'}（question id：${question.id}）${options}`;
+    });
+    return `[DSH] 正在等你回答。请求 id：${frame.id}。\n${lines.join('\n')}\n` +
+      '人物表态后，用 dsh_answer 提交他选的 label（原样照抄，不要翻译）；没表态就把问题原样交给人物。';
+  }
+
+  /**
+   * Find the prompt a tool call means. Without an id, only a single pending prompt of that kind is
+   * unambiguous — otherwise the model gets the ids back and asks again instead of guessing.
+   */
+  private pickRequest(
+    id: string,
+    kind: 'approval' | 'question',
+  ): { frame: Extract<HostFrame, { t: 'request' }> } | { reason: string } {
+    const t = this.t.model;
+    if (id) {
+      const frame = this.pendingRequests.get(id);
+      if (!frame) return { reason: t.answerNoSuchRequest.replace('{id}', id) };
+      if (frame.kind !== kind) return { reason: t.answerWrongKind.replace('{id}', id) };
+      return { frame };
+    }
+    const matches = Array.from(this.pendingRequests.values()).filter((frame) => frame.kind === kind);
+    if (matches.length === 0) return { reason: t.answerNonePending };
+    if (matches.length > 1) {
+      return { reason: t.answerPickOne.replace('{ids}', matches.map((frame) => frame.id).join(', ')) };
+    }
+    return { frame: matches[0] };
+  }
+
   /** Hands one line to the speech chain; returns at once, the line speaks when its turn comes. */
   private enqueue(line: string): void {
     const epoch = this.speechEpoch;
@@ -1119,6 +1207,9 @@ export class FatfishWorld implements World {
           return t.workspacesDone.replace('{list}', rows.join('\n'));
         },
       },
+      // Only present while the person's switch is on: an approval grants a permission on their
+      // behalf, so it must not be a default the bot can reach without them turning it on.
+      ...(this.opts.cfg.answerForMe === true ? this.answerTools() : []),
       {
         name: 'tts_hush',
         description: [
@@ -1136,6 +1227,123 @@ export class FatfishWorld implements World {
           this.speechEpoch++;
           this.queuedSpeech = 0;
           return wasSpeaking || wasQueued ? this.t.hush.stopped : this.t.hush.nothing;
+        },
+      },
+    ];
+  }
+
+  /**
+   * The click-it-for-me tools, present only while `answerForMe` is on.
+   *
+   * Both tools act on the request notice that just arrived, not on a guess: the notice carries the
+   * request id and the option labels, and the Host refuses a label it never offered. That keeps the
+   * pet's click identical to the one the person would have made in the DSH pane.
+   */
+  private answerTools(): ToolDef[] {
+    const t = this.t.model;
+    return [
+      {
+        name: 'dsh_approve',
+        description: [
+          'Click the DSH permission prompt that is waiting for the person: allow once, reject, or cancel it.',
+          'Use it only after the person has said what they want — the approval is theirs, you are the hand that clicks.',
+          'The notice names the request id and the tool; without an id it acts only when exactly one approval is waiting.',
+          'The receipt says whether the click reached DSH. Do not click to narrate what you are doing.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', maxLength: 64, description: 'Request id from the notice; may be omitted when only one approval is waiting.' },
+            decision: {
+              type: 'string',
+              enum: ['allowed-once', 'rejected', 'cancelled'],
+              description: 'allowed-once approves this one call; rejected denies it; cancelled withdraws the prompt.',
+            },
+          },
+          required: ['decision'],
+        },
+        handler: async (args) => {
+          if (!this.client) return t.answerUnsent;
+          const decision =
+            args.decision === 'allowed-once' || args.decision === 'rejected' || args.decision === 'cancelled'
+              ? args.decision
+              : null;
+          if (decision === null) return t.answerBadDecision;
+          const picked = this.pickRequest(typeof args.id === 'string' ? args.id.trim() : '', 'approval');
+          if ('reason' in picked) return picked.reason;
+          if (!this.client.answer(picked.frame.id, { decision })) return t.answerUnsent;
+          this.pendingRequests.delete(picked.frame.id);
+          return t.approved.replace('{tool}', picked.frame.tool ?? 'tool');
+        },
+      },
+      {
+        name: 'dsh_answer',
+        description: [
+          'Answer the DSH question that is waiting for the person, naming option labels exactly as the notice listed them.',
+          'Use it only after the person has said which choice they want; if they have not, hand the question to them instead of picking for them.',
+          'Each selection names the question id and one or more option labels from the notice; free text goes in custom when no label fits.',
+          'The receipt says whether the answer reached DSH.',
+        ].join(' '),
+        tags: ['speak'],
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', maxLength: 64, description: 'Request id from the notice; may be omitted when only one question is waiting.' },
+            selections: {
+              type: 'array',
+              description: 'One entry per question answered.',
+              items: {
+                type: 'object',
+                properties: {
+                  question: { type: 'string', maxLength: 64, description: 'Question id from the notice.' },
+                  selected: {
+                    type: 'array',
+                    items: { type: 'string', maxLength: 200 },
+                    description: 'Option labels, copied exactly as the notice printed them.',
+                  },
+                  custom: { type: 'string', maxLength: 2000, description: 'Free text when none of the labels fits.' },
+                },
+                required: ['question'],
+              },
+            },
+          },
+          required: ['selections'],
+        },
+        handler: async (args) => {
+          if (!this.client) return t.answerUnsent;
+          const picked = this.pickRequest(typeof args.id === 'string' ? args.id.trim() : '', 'question');
+          if ('reason' in picked) return picked.reason;
+          const questions = picked.frame.questions ?? [];
+          const offered = Array.isArray(args.selections) ? args.selections : [];
+          const answers: Array<{ id: string; selected: string[]; custom?: string }> = [];
+          for (const raw of offered) {
+            if (typeof raw !== 'object' || raw === null) continue;
+            const row = raw as { question?: unknown; selected?: unknown; custom?: unknown };
+            const questionId = typeof row.question === 'string' ? row.question.trim() : '';
+            const question = questions.find((entry) => entry.id === questionId);
+            if (!question) return t.answerUnknownQuestion.replace('{question}', questionId || '(empty)');
+            const labels = (question.options ?? []).map((option) => option.label);
+            const selected = Array.isArray(row.selected)
+              ? row.selected.filter((label): label is string => typeof label === 'string')
+              : [];
+            const unknown = selected.find((label) => !labels.includes(label));
+            if (unknown !== undefined) {
+              return t.answerUnknownOption.replace('{option}', unknown).replace('{options}', labels.join(' / '));
+            }
+            if (question.multiSelect !== true && selected.length > 1) {
+              return t.answerSingleChoice.replace('{question}', question.question);
+            }
+            const custom = typeof row.custom === 'string' && row.custom.trim() ? row.custom.trim() : undefined;
+            if (selected.length === 0 && custom === undefined) {
+              return t.answerNothingPicked.replace('{question}', question.question);
+            }
+            answers.push({ id: question.id, selected, ...(custom ? { custom } : {}) });
+          }
+          if (answers.length === 0) return t.answerNothingPicked.replace('{question}', '(none)');
+          if (!this.client.answer(picked.frame.id, { answers })) return t.answerUnsent;
+          this.pendingRequests.delete(picked.frame.id);
+          return t.answered.replace('{count}', String(answers.length));
         },
       },
     ];
