@@ -1,5 +1,13 @@
 # 更新说明
 
+## 0.6.28 — 已发布（GitHub Release）
+
+- **重连不再白等一次全端口扫描**（issue [#19](https://github.com/blacksunshy/coopanion-fatfish/issues/19)）：断线时旧代码在「是否允许扫描」的节流判断之前就把 `discoveredUrl` 清掉了，于是每次重试都去拨配置里的 URL，而能把同一个端口重新找回来的扫描又被 20 秒冷却挡着——端口根本没变，重连却要等完冷却（约 4–5 秒）。现在最后找到的地址会一直用到扫描真的落空才丢弃；扫描确认 DSH 就在配置端口时，也顺手清掉过期的旧地址
+- **上下文占用超过窗口时不再误判为「快满了」**（issue [#17](https://github.com/blacksunshy/coopanion-fatfish/issues/17)）：代理模型会在上游折叠历史，Host 若用 `tokenMeter.measure()` 读原始 transcript，就会报出比窗口还大的数字（实测 1.36M / 1M 窗口，实际只用了 12.5%），大肥鱼据此把刚开的会话交接掉了。现在 `used > size` 或缺少其中一个数都视为「读不出可信占用」，退回 400 轮兜底
+- **1–3 个选项的问题会先用 `pet_ask` 放进气泡给人物点**（issue [#18](https://github.com/blacksunshy/coopanion-fatfish/issues/18)）：此前题目与选项只进了模型上下文，气泡上没有能点的按钮；现在单个问题且选项 ≤ 3 时，通知里会让模型先调 `pet_ask` 把选项摆出来，人物点完或直接说话后再用 `dsh_answer` 提交。没有 `pet_ask`（未装桌面宠物包）时按原样把问题交给人物
+- 与 Host 侧配对：`coopanion-connector-dsh ≥ 0.2.28`（占用数字改为读 `contextPressure`）；旧 Host 也能用，只是拿到不可信数字时按轮次兜底
+- 测试：`tsc --noEmit` 通过；`vitest` **117 passed**（新增重连保留地址、不可信占用不回退、缺数字退回轮次、1–3 选项提示与 4 选项不提示）
+
 ## 0.6.27 — 已发布（GitHub Release）
 
 - **扩展简介重写**：市场里只留「能做什么」与「安装需要什么」，不再把每一版的改动堆在简介里（原先中英文各七千多字节）；逐版改动统一看本文件

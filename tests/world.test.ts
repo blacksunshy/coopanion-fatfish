@@ -633,6 +633,29 @@ describe('the remembered Host port', () => {
     }
   });
 
+  it('keeps the discovered address while the next sweep is still cooling down (issue #19)', async () => {
+    // Regression for the reconnect complaint: a dropped socket cleared the hint before the pacing
+    // check, so every retry dialled the configured URL while the sweep that would have re-found
+    // the same port was held off by the cooldown. A same-port reconnect therefore waited it out.
+    const world = new FatfishWorld({ cfg: { url: 'ws://127.0.0.1:1/coopanion/pet' }, discover: false } as never);
+    const priv = world as unknown as {
+      host: unknown;
+      running: boolean;
+      connected: boolean;
+      discoveredUrl: string | null;
+      nextSweepAt: number;
+      rediscover(force?: boolean): Promise<void>;
+    };
+    const hint = 'ws://127.0.0.1:54321/coopanion/pet';
+    priv.host = {};
+    priv.running = true;
+    priv.connected = false;
+    priv.discoveredUrl = hint;
+    priv.nextSweepAt = Date.now() + 20_000;
+    await priv.rediscover();
+    expect(priv.discoveredUrl).toBe(hint);
+  });
+
   it('is written once the Host answers, so the next start can skip the sweep', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'fatfish-cache-'));
     const host = await hostOnFreePort();
@@ -706,6 +729,50 @@ describe('the remembered Host port', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 8_000);
+});
+
+/** A World whose bridge client only records the sessions the handover asks it to create. */
+function handoverProbe(): { world: FatfishWorld; made: string[] } {
+  const world = new FatfishWorld({ cfg: { url: 'ws://127.0.0.1:1/coopanion/pet' }, discover: false } as never);
+  const made: string[] = [];
+  (world as unknown as { client: unknown }).client = {
+    newSession: async () => {
+      made.push('new');
+      return { ok: true, session: 'session-new' };
+    },
+    pick: async () => null,
+    say: async () => ({ ok: true }),
+  };
+  return { world, made };
+}
+
+/** The handover decision, called the way `turn-end` calls it. */
+const handover = (world: FatfishWorld, turn: number, used?: number, size?: number): Promise<void> =>
+  (world as unknown as { maybeHandover(t: number, u?: number, s?: number): Promise<void> }).maybeHandover(turn, used, size);
+
+describe('handing over to a fresh conversation', () => {
+  it('ignores a spend figure larger than the window (issue #17)', async () => {
+    // A proxied model folds history upstream, so a Host measuring the raw transcript can report
+    // 1.36M tokens against a 1M window at a real 12.5%. Handing over on that figure throws away a
+    // conversation that had barely started, so an impossible number is not a full context.
+    const { world, made } = handoverProbe();
+    await handover(world, 38, 1_360_000, 1_000_000);
+    expect(made).toEqual([]);
+  });
+
+  it('hands over at 90% of a window it can believe', async () => {
+    const { world, made } = handoverProbe();
+    await handover(world, 1, 950_000, 1_000_000);
+    expect(made).toEqual(['new']);
+  });
+
+  it('falls back to the turn count when a window arrives without a figure', async () => {
+    const { world, made } = handoverProbe();
+    await handover(world, 399, undefined, 1_000_000);
+    expect(made).toEqual([]);
+    await handover(world, 400, undefined, 1_000_000);
+    expect(made).toEqual(['new']);
+  });
 });
 
 /** The pending reminder timers of one World, by count. */
@@ -827,6 +894,30 @@ describe('a prompt the person lets the pet answer', () => {
     await until(() => notices(host).some((text) => text.includes('req-3')));
     await new Promise((done) => setTimeout(done, 160));
     expect(await tool(world, 'dsh_approve').handler({ decision: 'rejected' }, {} as never)).toContain('没有等你决定');
+  });
+
+  it('asks the model to put a 1–3 option question into a pet_ask bubble (issue #18)', async () => {
+    const { host } = await withHost((socket, frame) => {
+      if (frame.t !== 'hello') return;
+      socket.send(JSON.stringify({
+        t: 'request',
+        id: 'req-bubble',
+        kind: 'question',
+        questions: [{ id: 'q1', question: '用哪个？', options: [{ label: '甲' }, { label: '乙' }, { label: '丙' }] }],
+      }));
+      socket.send(JSON.stringify({
+        t: 'request',
+        id: 'req-many',
+        kind: 'question',
+        questions: [{ id: 'q2', question: '选哪些？', options: [{ label: '甲' }, { label: '乙' }, { label: '丙' }, { label: '丁' }] }],
+      }));
+    }, { answerForMe: true, ttsEnabled: false });
+
+    await until(() => notices(host).some((text) => text.includes('req-bubble'))
+      && notices(host).some((text) => text.includes('req-many')));
+    expect(notices(host).find((text) => text.includes('req-bubble'))).toContain('pet_ask');
+    // Four options do not fit the card: no hint, the question goes to the person as before.
+    expect(notices(host).find((text) => text.includes('req-many'))).not.toContain('pet_ask');
   });
 
   it('does not offer the click tools while the switch is off', async () => {

@@ -249,32 +249,40 @@ export class FatfishWorld implements World {
   private async rediscover(force = false): Promise<void> {
     const host = this.host;
     if (!this.running || !host || this.discovering) return;
-    // The address discovery found is not answering either, or we would not be here: fall back to
-    // the configured one for the retries in between, and let the sweep below look for where the
-    // Host went. A discovered address is a hint about the past, not a replacement for the config.
-    this.discoveredUrl = null;
+    // A dropped socket is not proof that the address moved: DSH restarts on the port it picked,
+    // and a transient drop is not a port change. Keep dialling the address discovery last found
+    // while the sweep below is rate-limited, so a reconnect on the same port happens on the next
+    // retry instead of waiting out the cooldown (issue #19). Only a sweep that finds nothing
+    // retires the hint and falls back to the configured URL.
     if (!force && Date.now() < this.nextSweepAt) return;
     this.discovering = true;
+    let found = false;
     try {
-      const found = await discoverBridge({ version: PROTOCOL_VERSION, shouldStop: () => !this.running });
-      if (!found || !this.running || this.connected) return;
-      this.rememberPort(found.port);
-      const next = this.urlAtPort(found.port);
+      const hit = await discoverBridge({ version: PROTOCOL_VERSION, shouldStop: () => !this.running });
+      if (!hit || !this.running || this.connected) return;
+      found = true;
+      this.rememberPort(hit.port);
+      const next = this.urlAtPort(hit.port);
       // The config already names the Host's port: the dial that just failed is not about a moved
-      // port, so leave the pacing to the retry path below.
-      if (next === this.configuredUrl) return;
+      // port, and any older hint is now known to be wrong.
+      if (next === this.configuredUrl) {
+        this.discoveredUrl = null;
+        return;
+      }
       this.sweepWait = DISCOVER_RETRY_MS;
       this.nextSweepAt = Date.now() + DISCOVER_COOLDOWN_MS;
       this.discoveredUrl = next;
-      host.log.info(`DSH bridge moved to 127.0.0.1:${found.port}, reconnecting`);
+      host.log.info(`DSH bridge moved to 127.0.0.1:${hit.port}, reconnecting`);
       this.client?.retryNow();
     } catch {
       // A sweep that throws is a sweep that found nothing; the retry loop will come back to it.
     } finally {
       this.discovering = false;
-      if (!this.discoveredUrl && this.running && !this.connected) {
-        // Nothing to dial: come back sooner than a full retry cycle, but not so soon that a DSH
+      if (!found && this.running && !this.connected) {
+        // Nothing answered anywhere: the address discovery last found is as dead as the rest, so
+        // stop dialling it. Come back sooner than a full retry cycle, but not so soon that a DSH
         // nobody started keeps a sweep running half the time.
+        this.discoveredUrl = null;
         this.sweepWait = Math.min(this.sweepWait * 2, DISCOVER_MAX_MS);
         this.nextSweepAt = Date.now() + this.sweepWait;
       }
@@ -713,9 +721,16 @@ export class FatfishWorld implements World {
    */
   private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
     if (this.handoverStarted) return;
-    const ratio = size && size > 0 ? (used ?? 0) / size : 0;
-    const threshold = size && size > 0 ? HANDOVER_RATIO : HANDOVER_TURNS;
-    const overflow = size && size > 0 ? ratio >= threshold : turn >= threshold;
+    // DSH's figure is only believable when it fits inside the window. A proxied model folds
+    // history upstream, so a Host measuring `tokenMeter.measure()` can report a transcript longer
+    // than the window it is compared against — issue #17 saw 1.36M "used" of a 1M window at a real
+    // 12.5%, and the pet handed over a conversation that had barely started. An impossible figure
+    // is not a full context: ignore it and fall back to the turn count.
+    const spend = typeof used === 'number' && Number.isFinite(used) && used >= 0 ? used : undefined;
+    const window = typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : undefined;
+    const overflow = spend !== undefined && window !== undefined && spend <= window
+      ? spend / window >= HANDOVER_RATIO
+      : turn >= HANDOVER_TURNS;
     if (!overflow) return;
     this.handoverStarted = true;
     const client = this.client;
@@ -934,13 +949,26 @@ export class FatfishWorld implements World {
       return `[DSH] 正在等你批准 ${tool}${reason}。请求 id：${frame.id}。` +
         '人物已经明确表态时，用 dsh_approve 替他点（decision = allowed-once / rejected / cancelled）；没表态就先把问题交给人物。';
     }
-    const lines = (frame.questions ?? []).map((question, index) => {
+    const questions = frame.questions ?? [];
+    const single = questions.length === 1 ? questions[0] : undefined;
+    const choices = single?.options ?? [];
+    // One question with 1–3 options is exactly what `pet_ask` can draw as a card, and a card is
+    // the only surface a person can answer without switching windows. Without this hint the
+    // labels only reached the model and the bubble showed a question nobody could tap (issue
+    // #18). `pet_ask` ships with the desktop-pet world; when it is absent the model is told to
+    // hand the question over unchanged.
+    const pickable = single !== undefined && single.multiSelect !== true
+      && choices.length >= 1 && choices.length <= 3;
+    const bubble = pickable
+      ? '这题有 1–3 个选项：先用 pet_ask 把选项原样放进气泡让人物点；他点完或直接打字表态后，再用 dsh_answer 提交同一个 label。没有 pet_ask 工具就把问题原样交给人物。\n'
+      : '';
+    const lines = questions.map((question, index) => {
       const options = question.options?.length
         ? ` 选项：${question.options.map((option) => option.label).join(' / ')}`
         : ' （没有给选项，需要人物自己输入）';
       return `${index + 1}. ${question.question || '(未命名问题)'}（question id：${question.id}）${options}`;
     });
-    return `[DSH] 正在等你回答。请求 id：${frame.id}。\n${lines.join('\n')}\n` +
+    return `${bubble}[DSH] 正在等你回答。请求 id：${frame.id}。\n${lines.join('\n')}\n` +
       '人物表态后，用 dsh_answer 提交他选的 label（原样照抄，不要翻译）；没表态就把问题原样交给人物。';
   }
 
