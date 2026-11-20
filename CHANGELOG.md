@@ -1,8 +1,13 @@
 # 更新说明
 
+## 0.6.27 — 已发布（GitHub Release）
+
+- **扩展简介重写**：市场里只留「能做什么」与「安装需要什么」，不再把每一版的改动堆在简介里（原先中英文各七千多字节）；逐版改动统一看本文件
+- 无功能改动，行为与 0.6.26 完全一致
+
 ## 0.6.26 — 已发布（GitHub Release）
 
-- **新增「替人物点 DSH 的选项与批准」（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19) 里 qwq-awa-qnq 的建议，需 connector-dsh ≥ 0.2.25）**：设置里打开 `answerForMe`（默认关）后，小肥鱼连上 DSH 时在 `hello` 里声明 `caps: ['answers']`；DSH 弹出批准或 `ask_user_question` 时请求直接发过来，它用两个新工具回决定——`dsh_approve`（`allowed-once` / `rejected` / `cancelled`）与 `dsh_answer`（按选项 label 选择，支持多选与自定义文本），你不在键鼠前也能让它代点
+- **新增「替人物点 DSH 的选项与批准」（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19) 里 qwq-awa-qnq 的建议，需 connector-dsh ≥ 0.2.25）**：设置里打开 `answerForMe`（默认关）后，大肥鱼连上 DSH 时在 `hello` 里声明 `caps: ['answers']`；DSH 弹出批准或 `ask_user_question` 时请求直接发过来，它用两个新工具回决定——`dsh_approve`（`allowed-once` / `rejected` / `cancelled`）与 `dsh_answer`（按选项 label 选择，支持多选与自定义文本），你不在键鼠前也能让它代点
 - **只点你自己的会话**：Host 只在桌宠拥有的那个会话里接管，别处的提问照旧交还桌面；请求带编号与工具名进通知，5 分钟没处理由 Host 自动过期交还，断线时本地待决请求一起清空
 - **默认关闭、旧组合不受影响**：开关关着就不声明能力、也不暴露这两个工具，Host 继续按原来的批准 / 问句通知路径工作；`notify` 各档位行为不变
 - 与 Host 侧配对：`coopanion-connector-dsh ≥ 0.2.25`（`request` / `request-end` / `answer` 帧）
@@ -55,7 +60,7 @@
 
 ## 0.6.21 — 已发布（GitHub Release）
 
-- **修复：在 DSH 里手动切会话会被小肥鱼抢回去**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19)，YuYinDaJiang 报告）：小肥鱼身上钉着会话时，它每次收到 Host 的 `ready` 都会把本地固定重新 `pick` 一次。而 connector ≥ 0.2.5 的自动跟随会在你于另一个会话说话时把归属切过去并发 `ready` —— 于是小肥鱼立刻把归属抢回旧会话，你怎么切都「还在旧对话上」。现在：**连续在线时以 Host 的归属为准，跟随你切到的会话并丢掉本地固定**；只有断线重连后的第一个 `ready` 才恢复自己的固定（那种情况是 DSH 重启丢了 pin）
+- **修复：在 DSH 里手动切会话会被大肥鱼抢回去**（讨论 [#19](https://github.com/Pal-AI-Lab/cortico-extensions/discussions/19)，YuYinDaJiang 报告）：大肥鱼身上钉着会话时，它每次收到 Host 的 `ready` 都会把本地固定重新 `pick` 一次。而 connector ≥ 0.2.5 的自动跟随会在你于另一个会话说话时把归属切过去并发 `ready` —— 于是大肥鱼立刻把归属抢回旧会话，你怎么切都「还在旧对话上」。现在：**连续在线时以 Host 的归属为准，跟随你切到的会话并丢掉本地固定**；只有断线重连后的第一个 `ready` 才恢复自己的固定（那种情况是 DSH 重启丢了 pin）
 - **修复：新建会话/列会话一律报「超时」没有原因**
   - connector 侧（需 ≥ 0.2.19）给新建接口加 8 秒上限，失败带原因
   - 桌宠侧把 Host 的 `error` 帧当作对应请求的回答立即返回，并在日志里记下 Host 的原话（例如「this Host does not support listing sessions」），不再白等满超时
