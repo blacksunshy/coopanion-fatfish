@@ -69,6 +69,19 @@ const COOLDOWN_MS = 10_000;
 const ATTEMPTS = 2;
 /** The pause before that retry, long enough for a half-open socket to be gone. */
 const RETRY_DELAY_MS = 400;
+/**
+ * How long one line may spend synthesising before it is dropped.
+ *
+ * The Edge client is a WebSocket kept open across lines. A network that stops answering without
+ * closing it (a VPN that grabbed the route, a slept laptop) leaves `toFile()` pending forever, and
+ * that one line used to hold the whole speech chain — and the "speaking" lamp — for the rest of the
+ * session: the pet showed a spinner, said nothing, while the person's words kept going to DSH. The
+ * deadline is above the http engine's own timeout plus one Edge retry, so a slow-but-working line
+ * is never cut.
+ */
+const SYNTHESIS_DEADLINE_MS = 45_000;
+/** How long one clip may play before its player is treated as stuck and stopped. */
+const PLAYBACK_DEADLINE_MS = 5 * 60_000;
 
 /**
  * Splits one bubble into sayable sentences at Chinese and English end punctuation. A plain `.` is
@@ -187,6 +200,9 @@ export class Speaker {
   private failedAt = 0;
   private warnedPlatform = false;
 
+  /** The synthesis deadline; a field so a test can shorten it instead of waiting 45 s. */
+  synthesisDeadlineMs: number = SYNTHESIS_DEADLINE_MS;
+
   /** One line spoken aloud; resolves when playback ends or is cut. `false` means synthesis failed and the line was skipped. */
   async speak(text: string, opts: SpeakOptions, log: (line: string) => void, engine: TtsEngineConfig = DEFAULT_ENGINE): Promise<boolean> {
     if (!this.canPlay(log)) return false;
@@ -201,8 +217,35 @@ export class Speaker {
    */
   async prepare(text: string, opts: SpeakOptions, log: (line: string) => void, engine: TtsEngineConfig = DEFAULT_ENGINE): Promise<PreparedClip | null> {
     if (Date.now() - this.failedAt < COOLDOWN_MS) return null;
-    const clip = await this.synthesise(text, opts, log, engine);
+    const clip = await this.synthesiseWithinDeadline(text, opts, log, engine);
     return clip ? { clip } : null;
+  }
+
+  /**
+   * `synthesise` with a deadline, so a halted-but-open Edge socket cannot hold the speech chain
+   * forever. Losing the race drops the socket (`release`) and returns `null`, which the World reads
+   * as "this line was skipped": the lamp clears and the next line dials a fresh connection.
+   */
+  private async synthesiseWithinDeadline(
+    text: string,
+    opts: SpeakOptions,
+    log: (line: string) => void,
+    engine: TtsEngineConfig,
+  ): Promise<string | null> {
+    const work = this.synthesise(text, opts, log, engine);
+    let timer: NodeJS.Timeout | null = null;
+    const deadline = new Promise<'deadline'>((done) => {
+      timer = setTimeout(() => done('deadline'), this.synthesisDeadlineMs);
+      timer.unref?.();
+    });
+    const outcome = await Promise.race([work, deadline]);
+    if (timer) clearTimeout(timer);
+    if (outcome !== 'deadline') return outcome;
+    log(`TTS synthesis still running after ${this.synthesisDeadlineMs} ms; dropping the line and its socket`);
+    this.release();
+    // The abandoned attempt may still produce a clip; it must not litter the stage directory.
+    void work.then((clip) => (clip ? rm(clip, { force: true }) : undefined)).catch(() => {});
+    return null;
   }
 
   /** Plays a prepared clip and removes its temp file; `false` when this platform has no player. */
@@ -321,14 +364,27 @@ export class Speaker {
       const { command, args } = playCommand(clip);
       const child = spawn(command, args, { stdio: 'ignore', windowsHide: true });
       this.player = child;
-      child.once('exit', () => {
+      let settled = false;
+      let timer: NodeJS.Timeout | null = null;
+      // A player that never exits (a wedged PowerShell, a decoder waiting on a device) would keep
+      // the chain — and the lamp — on the same clip for the rest of the session.
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
         if (this.player === child) this.player = null;
         resolve();
-      });
+      };
+      timer = setTimeout(() => {
+        log(`TTS playback still running after ${PLAYBACK_DEADLINE_MS} ms; stopping it`);
+        child.kill();
+        finish();
+      }, PLAYBACK_DEADLINE_MS);
+      timer.unref?.();
+      child.once('exit', finish);
       child.once('error', (err) => {
         log(`TTS playback failed: ${err.message}`);
-        if (this.player === child) this.player = null;
-        resolve();
+        finish();
       });
     });
   }

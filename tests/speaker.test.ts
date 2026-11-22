@@ -267,3 +267,18 @@ describe('the resolved engine config', () => {
     expect(Object.keys(engineConfig).sort()).toEqual(['engine', 'fallbackEdge', 'httpUrl', 'speed', 'timeoutMs'].sort());
   });
 });
+
+describe('a synthesis that stops answering', () => {
+  it('is abandoned at the deadline instead of wedging the speech chain', async () => {
+    // The Edge socket can stop answering without closing (a VPN taking the route, a slept laptop).
+    // Before the deadline, that one `toFile()` stayed pending forever: every later line queued
+    // behind it, the lamp kept spinning, and the pet said nothing for the rest of the session.
+    const speaker = new Speaker();
+    (speaker as unknown as { synthesise: () => Promise<string | null> }).synthesise = () => new Promise(() => {});
+    speaker.synthesisDeadlineMs = 20;
+
+    const started = Date.now();
+    await expect(speaker.prepare('这一句永远不会合成', OPTIONS, () => {}, DEFAULT_ENGINE)).resolves.toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
