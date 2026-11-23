@@ -472,6 +472,8 @@ export class FatfishWorld implements World {
         const line = lineOf(event, this.opts.cfg.readOptions !== false);
         if (!line) continue;
         if (this.opts.cfg.relayPet === true) this.relaySelf(line, event.cursor);
+        // Off by default: the pet's bubble is the app's, and this pack only adds a voice when asked.
+        if (this.opts.cfg.ttsEnabled !== true) continue;
         host.log.info(`fatfish speaking: ${line.slice(0, 60)}`);
         this.enqueue(line);
       }
@@ -1011,7 +1013,7 @@ export class FatfishWorld implements World {
 
   private async say(line: string): Promise<void> {
     const host = this.host;
-    if (!host || this.opts.cfg.ttsEnabled === false) return;
+    if (!host || this.opts.cfg.ttsEnabled !== true) return;
     this.speaking = true;
     try {
       const spoken = this.pipeline.enabled
@@ -1379,7 +1381,7 @@ export class FatfishWorld implements World {
 
   envPromptVars(): Record<string, string> {
     const t = this.t.model;
-    const on = this.opts.cfg.ttsEnabled !== false;
+    const on = this.opts.cfg.ttsEnabled === true;
     return {
       'dsh.status': !this.client
         ? 'off'
@@ -1408,8 +1410,8 @@ export class FatfishWorld implements World {
         },
         {
           label: t.lamps.speech,
-          state: this.opts.cfg.ttsEnabled === false ? 'offline' : this.failed ? 'error' : this.speaking ? 'loading' : 'online',
-          hint: this.opts.cfg.ttsEnabled === false ? t.lamps.idle : this.failed ? t.lamps.failed : this.speaking ? t.lamps.speaking : t.lamps.idle,
+          state: this.opts.cfg.ttsEnabled !== true ? 'offline' : this.failed ? 'error' : this.speaking ? 'loading' : 'online',
+          hint: this.opts.cfg.ttsEnabled !== true ? t.lamps.idle : this.failed ? t.lamps.failed : this.speaking ? t.lamps.speaking : t.lamps.idle,
         },
       ],
       panels: panelDecls(),

@@ -70,7 +70,7 @@ export const en: FatfishText = {
     answerForMeHint: 'When DSH needs an approval or shows choices, offer them to Coo so it can click allow once / reject, or pick an option, after the person has said what they want. Needs Host plugin >= 0.2.20. Off by default — when off it only reminds and never clicks',
     voiceTitle: 'Voice',
     ttsEnabled: "Speak the pet's replies",
-    ttsEnabledHint: 'Coo reads its bubble lines aloud; question choices are read too',
+    ttsEnabledHint: 'Reads the bubble lines aloud with this pack\'s own full-sentence voice, question choices included. Off by default; it is a separate switch from the app\'s per-character "read bubbles aloud", and both on plays two voices at once',
     engine: 'Speech engine',
     engineHint: 'Which engine synthesises the speech. The built-in Edge TTS is the default; HTTP sends the text to a speech server of your own (local or self-hosted), with playback and interruption unchanged. Fill in the address below before switching',
     engineEdge: 'Edge TTS (built in, default)',

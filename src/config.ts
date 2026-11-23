@@ -151,7 +151,11 @@ export interface FatfishConfigSection {
    */
   answerForMe: boolean;
   // ---- the voice half ----
-  /** Reads the pet's replies aloud. */
+  /**
+   * Reads the pet's replies aloud with this pack's own voice. Off by default: the app already has
+   * a bubble-reading switch of its own, and a pack that adds a second voice unasked is the one
+   * people blame when two sounds overlap.
+   */
   ttsEnabled: boolean;
   /** Which engine synthesises the speech: `edge` (default) or `http` (a server of the person's own). */
   engine: VoiceEngine;
@@ -197,7 +201,7 @@ export const FATFISH_DEFAULTS: FatfishConfigSection = {
   notify: 'results',
   askRemind: false,
   answerForMe: false,
-  ttsEnabled: true,
+  ttsEnabled: false,
   engine: 'edge',
   httpUrl: '',
   speed: 1,

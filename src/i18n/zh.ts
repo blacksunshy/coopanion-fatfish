@@ -70,7 +70,7 @@ export const zh: FatfishText = {
     answerForMeHint: 'DSH 要批准或弹选择框时，把选项交给 Coo：人物表态后由它点「允许一次 / 拒绝」，或选中某一项。需要 DSH 侧插件 ≥ 0.2.20。默认关闭（关闭时只提醒、不代点）',
     voiceTitle: '语音朗读',
     ttsEnabled: '朗读桌宠的话',
-    ttsEnabledHint: 'Coo 在气泡里说话的同时读出声来；提问的选项一并读出',
+    ttsEnabledHint: '用本扩展自己的语音把气泡里的整句话读出来，提问的选项一并读出。默认关闭；它和软件设置里的「念出气泡文字」（逐字音节）是两个独立开关，两个都开会叠音',
     engine: '朗读引擎',
     engineHint: '用哪个引擎合成声音。默认用内置的 Edge TTS；选 HTTP 则把文字发给你自己的语音服务（本机或自建），播放与打断都不变。首次开启前请先在下面填好地址',
     engineEdge: 'Edge TTS（内置，默认）',

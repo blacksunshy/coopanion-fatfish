@@ -55,7 +55,7 @@ async function recordWorld(cfg: Record<string, unknown>): Promise<{ world: Fatfi
     rec.discarded++;
   });
   const host = new FakeHost();
-  const world = new FatfishWorld({ cfg: { bridgeEnabled: false, discover: false, ...cfg } as never });
+  const world = new FatfishWorld({ cfg: { bridgeEnabled: false, discover: false, ttsEnabled: true, ...cfg } as never });
   running.push(world);
   await world.start(host as never);
   return { world, host, rec };
@@ -124,6 +124,23 @@ describe('the pipeline settings', () => {
     expect(resolvePipeline({ sentencePipelineEnabled: true, sentencePipelineMaxChars: 2 }).maxChars).toBe(PIPELINE_CHARS_RANGE.min);
     expect(resolvePipeline({ sentencePipelineEnabled: true, sentencePipelineMaxChars: 9999 }).maxChars).toBe(PIPELINE_CHARS_RANGE.max);
     expect(resolvePipeline({ sentencePipelineEnabled: true, sentencePipelineMaxChars: 'abc' as never }).maxChars).toBe(40);
+  });
+});
+
+describe('the voice switch', () => {
+  it('is off in a fresh config, so an untouched install adds no second voice to the bubble', async () => {
+    expect(FATFISH_DEFAULTS.ttsEnabled).toBe(false);
+    const speak = vi.spyOn(Speaker.prototype, 'speak').mockResolvedValue(true);
+    const prepare = vi.spyOn(Speaker.prototype, 'prepare').mockResolvedValue(null);
+    const host = new FakeHost();
+    const world = new FatfishWorld({ cfg: { ...FATFISH_DEFAULTS, bridgeEnabled: false, discover: false } as never });
+    running.push(world);
+    await world.start(host as never);
+    await feedLine(host, '这一句不该被读出来。');
+    // The scan runs on a 1.5 s tick; two ticks are enough to prove nothing was queued either.
+    await new Promise((done) => setTimeout(done, 3_200));
+    expect(speak).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
   });
 });
 
