@@ -1,5 +1,12 @@
 # 更新说明
 
+## 0.6.31 — 已发布（GitHub Release）
+
+- **DSH 批准 / 提问的 notice 不再让 bot 假装自己能代点**：默认关闭「替人物点 DSH 选项与批准」（`answerForMe=false`）时，connector 那边根本不会发 `request` frame，只发普通的 `approval` / `question` notice——此时 bot 只能告诉人物「DSH 正在等你批准 xxx」，让他切到 DSH 窗口自己点。但旧的 `requestNotice()` 里始终写着"用 dsh_approve 替他点"、"先用 pet_ask 把选项放进气泡"——bot 照做了，工具却不存在或 desktop-pet 气泡点击结果回不来，于是用户看到 Coo 在那晃、说些让人以为"代点成功"的话，DSH 那边还是得手动点，任务跑完甚至可能误以为批准已经过了又继续激活一轮。现在 requestNotice 会根据 `answerForMe` 开关条件化文案：关着就直说"这是让人物自己去 DSH 窗口点的提示，不要代点"；开着才说"人物表态后用 dsh_approve / dsh_answer 提交"，并保留 issue #18 的 pet_ask 指引（单题 1–3 选项时让 bot 把选项放进气泡，人物点完 desktop-pet 会把选中的 label 作为事件回送，bot 再调 dsh_answer）
+- **ENV_PROMPT 新增一节专门讲 approval / question notice 的处理规则**：明确告诉模型这些点只有人物自己能在 DSH 窗口里点到，开关没开时不要假装能帮；开了之后也得等人物表态才调工具，不能自己选
+- 无协议改动，兼容 connector 任意 0.2.x
+- 测试：`tsc --noEmit` 通过；`vitest` **119 passed**（issue #18 的 pet_ask 指引回归测试也跟着保留）
+
 ## 0.6.30 — 已发布（GitHub Release）
 
 - **朗读默认关闭，不再没被要求就多出一路声音**：此前装完本包，`ttsEnabled` 默认是开——桌宠一句话还没说完，软件自己的「念出气泡文字」（逐字音节）和本包的整句 TTS 一起响，听感就是「带回音」；而关掉软件那个开关又停不下本包的朗读，于是有人以为「关不掉」。现在 `ttsEnabled` 默认 `false`，新装和没动过这项的配置都不再出声；想要整句朗读的人显式打开「朗读桌宠的话」即可，已有配置里写着 `true` 的保持原样

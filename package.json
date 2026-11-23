@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fatfish",
-  "version": "0.6.30",
+  "version": "0.6.31",
   "type": "module",
   "description": "和 DSH 对话、朗读回复的桌宠扩展；可选自建 HTTP 语音引擎。桥接需装 DSH 侧插件 coopanion-connector-dsh。 / Desktop pet for DSH: chat, read replies aloud, optional HTTP TTS. Bridge needs coopanion-connector-dsh.",
   "author": "blacksunshy",
@@ -40,11 +40,11 @@
     "locales": {
       "zh": {
         "displayName": "大肥鱼功能复合包",
-        "description": "### 大肥鱼（Cortico 扩展）\n\n和 DeepSeek Harness（DSH）对话，让大肥鱼替你干活、写代码；它也能朗读 DSH 的回复，把你在桌面说的话交给 DSH。\n\n**能做什么**\n- 对话桥接：在 DSH 的会话之间传话，支持会话清单、指名投递、固定与解除固定\n- 通知分级：每轮结果合并成一条，批准 / 提问 / 出错立即提醒\n- 语音朗读：内置 Edge TTS，可选自建 HTTP 语音引擎与分句流水线（默认关，需在设置里打开）\n- 代点选项：可选让大肥鱼替你点 DSH 的批准与选项（默认关）\n- 自动交接：上下文快满时自动新建会话并交接\n\n**安装**\n- 在 Cortico 里安装本扩展（cortico-world-fatfish）\n- 桥接需要 DSH 侧插件 coopanion-connector-dsh（GitHub 分发，未上 npm），装好后两侧自动发现\n- 两个转发开关（relayPerson / relayPet）默认关闭，按需在设置里打开\n- 版本配对与逐版改动见仓库 README / CHANGELOG\n\n仓库：https://github.com/blacksunshy/coopanion-fatfish\n当前版本 v0.6.30"
+        "description": "### 大肥鱼（Cortico 扩展）\n\n和 DeepSeek Harness（DSH）对话，让大肥鱼替你干活、写代码；它也能朗读 DSH 的回复，把你在桌面说的话交给 DSH。\n\n**能做什么**\n- 对话桥接：在 DSH 的会话之间传话，支持会话清单、指名投递、固定与解除固定\n- 通知分级：每轮结果合并成一条，批准 / 提问 / 出错立即提醒\n- 语音朗读：内置 Edge TTS，可选自建 HTTP 语音引擎与分句流水线（默认关，需在设置里打开）\n- 代点选项：可选让大肥鱼替你点 DSH 的批准与选项（默认关）\n- 自动交接：上下文快满时自动新建会话并交接\n\n**安装**\n- 在 Cortico 里安装本扩展（cortico-world-fatfish）\n- 桥接需要 DSH 侧插件 coopanion-connector-dsh（GitHub 分发，未上 npm），装好后两侧自动发现\n- 两个转发开关（relayPerson / relayPet）默认关闭，按需在设置里打开\n- 版本配对与逐版改动见仓库 README / CHANGELOG\n\n仓库：https://github.com/blacksunshy/coopanion-fatfish\n当前版本 v0.6.31"
       },
       "en": {
         "displayName": "Fatfish Companions Pack",
-        "description": "### Fatfish (Cortico extension)\n\nTalk to DeepSeek Harness (DSH) and let the pet do the work — write code, run tools, read its replies aloud, and carry what you say on the desktop into DSH.\n\n**What it does**\n- Bridge: trades lines with DSH conversations, with a session list, named delivery, pin and unpin\n- Notice levels: one notice per finished turn; approvals, questions and errors come through at once\n- Voice: built-in Edge TTS, or your own HTTP speech engine with a sentence pipeline (off by default)\n- Click for you: optionally let the pet answer DSH's approvals and questions (off by default)\n- Handover: opens a fresh conversation when the context is nearly full\n\n**Install**\n- Install this extension (cortico-world-fatfish) from Cortico\n- The bridge needs the DSH-side plugin coopanion-connector-dsh (GitHub only, not on npm); the two find each other once both are installed\n- relayPerson / relayPet are off by default; turn them on in the settings if you want them\n- See the repo README / CHANGELOG for version pairing and per-release notes\n\nRepo: https://github.com/blacksunshy/coopanion-fatfish\nCurrent version v0.6.30"
+        "description": "### Fatfish (Cortico extension)\n\nTalk to DeepSeek Harness (DSH) and let the pet do the work — write code, run tools, read its replies aloud, and carry what you say on the desktop into DSH.\n\n**What it does**\n- Bridge: trades lines with DSH conversations, with a session list, named delivery, pin and unpin\n- Notice levels: one notice per finished turn; approvals, questions and errors come through at once\n- Voice: built-in Edge TTS, or your own HTTP speech engine with a sentence pipeline (off by default)\n- Click for you: optionally let the pet answer DSH's approvals and questions (off by default)\n- Handover: opens a fresh conversation when the context is nearly full\n\n**Install**\n- Install this extension (cortico-world-fatfish) from Cortico\n- The bridge needs the DSH-side plugin coopanion-connector-dsh (GitHub only, not on npm); the two find each other once both are installed\n- relayPerson / relayPet are off by default; turn them on in the settings if you want them\n- See the repo README / CHANGELOG for version pairing and per-release notes\n\nRepo: https://github.com/blacksunshy/coopanion-fatfish\nCurrent version v0.6.31"
       }
     }
   },

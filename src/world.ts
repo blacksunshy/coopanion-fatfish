@@ -940,29 +940,29 @@ export class FatfishWorld implements World {
   }
 
   /**
-   * The notice that wakes the pet: the request id, the labels exactly as DSH shows them, and the
-   * tool to call. Wording is explicit that the decision is the person's — the pet is only the hand
-   * that clicks after they have spoken.
+   * The notice that wakes the pet when DSH is waiting on an approval or a question. It names the
+   * request id the Host accepts back, but stops short of telling the model to click: the click is
+   * only reachable through `dsh_approve` / `dsh_answer`, which live on a separate switch
+   * (`answerForMe`). Without that switch the notice is purely informational — the person has to
+   * go click in the DSH pane, and we must not pretend otherwise.
    */
   private requestNotice(frame: Extract<HostFrame, { t: 'request' }>): string {
     if (frame.kind === 'approval') {
       const tool = frame.tool ?? 'tool';
       const reason = frame.reason ? `：${frame.reason}` : '';
-      return `[DSH] 正在等你批准 ${tool}${reason}。请求 id：${frame.id}。` +
-        '人物已经明确表态时，用 dsh_approve 替他点（decision = allowed-once / rejected / cancelled）；没表态就先把问题交给人物。';
+      const clickable = this.opts.cfg.answerForMe === true;
+      const click = clickable
+        ? '人物已经明确表态时，用 dsh_approve 替他点（decision = allowed-once / rejected / cancelled）；没表态就先把问题交给他，让他去 DSH 手动点。'
+        : '这是让人物自己去 DSH 窗口点的提示，不要代点；他没表态就别调用 dsh_approve。';
+      return `[DSH] 正在等你批准 ${tool}${reason}。请求 id：${frame.id}。${click}`;
     }
     const questions = frame.questions ?? [];
     const single = questions.length === 1 ? questions[0] : undefined;
     const choices = single?.options ?? [];
-    // One question with 1–3 options is exactly what `pet_ask` can draw as a card, and a card is
-    // the only surface a person can answer without switching windows. Without this hint the
-    // labels only reached the model and the bubble showed a question nobody could tap (issue
-    // #18). `pet_ask` ships with the desktop-pet world; when it is absent the model is told to
-    // hand the question over unchanged.
-    const pickable = single !== undefined && single.multiSelect !== true
-      && choices.length >= 1 && choices.length <= 3;
-    const bubble = pickable
-      ? '这题有 1–3 个选项：先用 pet_ask 把选项原样放进气泡让人物点；他点完或直接打字表态后，再用 dsh_answer 提交同一个 label。没有 pet_ask 工具就把问题原样交给人物。\n'
+    const clickable = this.opts.cfg.answerForMe === true;
+    const bubble = clickable && single !== undefined && single.multiSelect !== true
+      && choices.length >= 1 && choices.length <= 3
+      ? '这题有 1–3 个选项：先用 pet_ask 把选项原样放进气泡让人物点，他点完（desktop-pet 会把他选的 label 作为事件回送）或直接打字表态后，再用 dsh_answer 提交他选的 label。没表态就别自己选。\n'
       : '';
     const lines = questions.map((question, index) => {
       const options = question.options?.length
@@ -971,7 +971,9 @@ export class FatfishWorld implements World {
       return `${index + 1}. ${question.question || '(未命名问题)'}（question id：${question.id}）${options}`;
     });
     return `${bubble}[DSH] 正在等你回答。请求 id：${frame.id}。\n${lines.join('\n')}\n` +
-      '人物表态后，用 dsh_answer 提交他选的 label（原样照抄，不要翻译）；没表态就把问题原样交给人物。';
+      (clickable
+        ? '人物表态后，用 dsh_answer 提交他选的 label（原样照抄，不要翻译）；没表态就把问题原样交给人物，别自己选。'
+        : '把问题原样交给人物，由他自己去 DSH 窗口作答或在桌面打字表态；不要代点选项。');
   }
 
   /**
