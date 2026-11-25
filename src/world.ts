@@ -181,6 +181,9 @@ export class FatfishWorld implements World {
   private pinnedSession: string | null = null;
   /** Set once a handover for the current session has begun, so it happens once per session. */
   private handoverStarted = false;
+  /** Session ids we have already handed over from; a session hands over at most once, even when the
+   *  Host's auto-follow pulls us back into it after we had already created a replacement. */
+  private readonly handedOverSessions = new Set<string>();
   /** True while the fresh session's first line is still owed. */
   private handoverSeedPending = false;
   /** The address the live socket actually dialled; sampled when the socket was created, so a
@@ -723,6 +726,11 @@ export class FatfishWorld implements World {
    */
   private async maybeHandover(turn: number, used?: number, size?: number): Promise<void> {
     if (this.handoverStarted) return;
+    // One session hands over at most once — even if the Host's auto-follow yanks us back into it
+    // after we had already spawned a replacement. Without this, a session that already turned 480+
+    // can hand over every subsequent turn-end once the boolean reset (issue #20).
+    const currentSessionId = this.session;
+    if (currentSessionId && this.handedOverSessions.has(currentSessionId)) return;
     // DSH's figure is only believable when it fits inside the window. A proxied model folds
     // history upstream, so a Host measuring `tokenMeter.measure()` can report a transcript longer
     // than the window it is compared against — issue #17 saw 1.36M "used" of a 1M window at a real
@@ -740,6 +748,9 @@ export class FatfishWorld implements World {
     try {
       const outcome = await client.newSession();
       if (!outcome.ok) { this.handoverStarted = false; return; }
+      // Record which session we walked away from, so a later auto-follow back to it does not
+      // hand it over a second time.
+      if (currentSessionId) this.handedOverSessions.add(currentSessionId);
       // Pin before picking: otherwise the default owner can take over the new session before we bind.
       this.pinnedSession = outcome.session;
       this.session = outcome.session;

@@ -773,6 +773,24 @@ describe('handing over to a fresh conversation', () => {
     await handover(world, 400, undefined, 1_000_000);
     expect(made).toEqual(['new']);
   });
+
+  it('hands each session over at most once (issue #20)', async () => {
+    // The Host's auto-follow can yank us back into the same old session after we had already
+    // spawned a replacement for it. If the guard is just a boolean the next turn-end on that old
+    // session hands it over a second (and third, fourth…) time. Each session id must carry
+    // exactly one handover, forever.
+    const { world, made } = handoverProbe();
+    (world as unknown as { session: string }).session = 'session-A';
+    await handover(world, 480, undefined, undefined);
+    expect(made).toEqual(['new']);
+    // Simulate auto-follow: Host pulls us back to session-A, and handoverStarted was reset when
+    // the seed fires. But session-A id is in handedOverSessions, so next turn-end must skip.
+    (world as unknown as { session: string; handoverStarted: boolean })
+      .session = 'session-A';
+    (world as unknown as { handoverStarted: boolean }).handoverStarted = false;
+    await handover(world, 481, undefined, undefined);
+    expect(made).toEqual(['new']);  // still one; no second handover for session-A
+  });
 });
 
 /** The pending reminder timers of one World, by count. */
